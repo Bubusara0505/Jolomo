@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: jolomo-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/jolomo}
+    username: ${DB_USER:jolomo}
+    password: ${DB_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  # Схему создаёт только Flyway. Hibernate таблицы не создаёт (JPA здесь не подключён).
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
