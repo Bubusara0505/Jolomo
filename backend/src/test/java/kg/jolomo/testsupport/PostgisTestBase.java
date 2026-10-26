@@ -34,6 +34,11 @@ public abstract class PostgisTestBase {
 
     @BeforeEach
     protected void cleanTables() {
-        jdbc.sql("TRUNCATE sms_messages, auth_challenges, refresh_sessions, users CASCADE").update();
+        jdbc.sql("TRUNCATE sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events CASCADE")
+                .update();
+        // Данные-справочники возвращаем к состоянию миграций.
+        jdbc.sql("UPDATE obligation_config SET enabled = false, version = NULL, loaded_at = NULL, loaded_by = NULL").update();
+        jdbc.sql("DELETE FROM eligibility_rules").update();
+        jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('PUBLISH_TRIP', 'APPROVED')").update();
     }
 }

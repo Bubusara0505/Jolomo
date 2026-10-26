@@ -133,6 +133,50 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/drivers/me:
+    post:
+      summary: Завести свой профиль водителя (UNVERIFIED), повтор безопасен
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverProfile' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    get:
+      summary: Свой профиль водителя
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverProfile' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: DRIVER_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/drivers/me/eligibility:
+    get:
+      summary: Может ли водитель публиковать поездку (подсказка для экрана; сервер решит заново)
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Решение и причина
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canPublishTrip: { type: boolean }
+                  reason:
+                    type: string
+                    enum: [OK, NOT_A_DRIVER, NOT_APPROVED, OBLIGATIONS_NOT_LOADED]
+        '401': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     accessCookie:
@@ -157,6 +201,12 @@ components:
         code: { type: string, example: OTP_INVALID }
         message: { type: string, description: Ключ перевода, example: error.otp.invalid }
         correlationId: { type: string }
+    DriverProfile:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UNVERIFIED, SUBMITTED, IN_REVIEW, APPROVED, REJECTED, EXPIRED, SUSPENDED]
     OtpRequest:
       type: object
       required: [phone, purpose]
