@@ -5,6 +5,16 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/jolomo}
     username: ${DB_USER:jolomo}
     password: ${DB_PASSWORD:}
+  # Документы личности не должны попадать во временный каталог открытым текстом: части до 10 МБ держим в памяти.
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 32MB
+      file-size-threshold: 10MB
+  # Статических маршрутов нет вообще: файлы отдаёт только код сервера.
+  web:
+    resources:
+      add-mappings: false
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -27,6 +37,11 @@ logging:
     level: "%5p [cid=%X{correlationId:-}]"
 
 jolomo:
+  identity:
+    # Каталог зашифрованных файлов личности, вне репозитория. На хосте пилота он входит в набор копий.
+    dir: ${IDENTITY_DIR:${user.home}/.jolomo/identity}
+    # export IDENTITY_KEY=$(openssl rand -base64 32). Потеря ключа = потеря файлов, храните его в копии ключей.
+    key: ${IDENTITY_KEY:}
   auth:
     otp:
       # Секрет для HMAC-хеша кодов. Обязателен, из окружения: export OTP_PEPPER=$(openssl rand -hex 32)

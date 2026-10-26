@@ -177,6 +177,77 @@ paths:
                     type: string
                     enum: [OK, NOT_A_DRIVER, NOT_APPROVED, OBLIGATIONS_NOT_LOADED]
         '401': { $ref: '#/components/responses/Error' }
+  /api/v1/verification/cases:
+    post:
+      summary: Подать документы на проверку водителя
+      description: |
+        multipart/form-data, поле files (1-3 файла): JPEG, PNG или PDF до 8 МБ. Тип определяется по содержимому,
+        заявленный Content-Type должен совпасть. Любая ошибка отклоняет всю заявку, ничего не сохраняется.
+        Нужен профиль водителя в статусе UNVERIFIED, REJECTED или EXPIRED. Маршрута, отдающего файлы, нет.
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  maxItems: 3
+                  items: { type: string, format: binary }
+      responses:
+        '201':
+          description: Заявка принята, профиль стал SUBMITTED
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  caseId: { type: string, format: uuid }
+                  status: { type: string, enum: [SUBMITTED] }
+                  files: { type: integer }
+        '400':
+          description: UPLOAD_NO_FILES, UPLOAD_TOO_MANY_FILES, UPLOAD_EMPTY_FILE, UPLOAD_TYPE_NOT_ALLOWED, UPLOAD_TYPE_MISMATCH, UPLOAD_INVALID_IMAGE, UPLOAD_IMAGE_TOO_LARGE, UPLOAD_INVALID_PDF, UPLOAD_ACTIVE_CONTENT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: DRIVER_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: CASE_NOT_ALLOWED (заявка уже на рассмотрении или водитель допущен)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '413':
+          description: UPLOAD_TOO_LARGE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/verification/cases/current:
+    get:
+      summary: Последняя заявка (без документов)
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Заявка
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  caseId: { type: string, format: uuid }
+                  status: { type: string }
+                  createdAt: { type: string, format: date-time }
+        '404':
+          description: CASE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     accessCookie:

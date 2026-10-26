@@ -3,7 +3,7 @@
 Java 21, Spring Boot (кандидат 4.1.1 по ТЗ), Gradle Kotlin DSL, PostgreSQL 16 + PostGIS, Flyway.
 
 ## Запуск
-1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`). Без любого из трёх секретов приложение не стартует.
+1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`) и `IDENTITY_KEY` (`openssl rand -base64 32`, ключ файлов личности; потеряете ключ, потеряете файлы). Без любого из этих секретов приложение не стартует.
 2. `docker compose up -d` — локальная БД с PostGIS.
 3. `./gradlew bootRun` (переменные из `.env` экспортируйте в окружение). Чтобы видеть код SMS в логе: `SPRING_PROFILES_ACTIVE=dev SMS_FAKE_LOG_BODY=true ./gradlew bootRun`; без профиля `dev` флаг не даст стартовать.
 4. Проверка: `curl localhost:8080/actuator/health`.
