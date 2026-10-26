@@ -21,3 +21,22 @@ management:
   endpoint:
     health:
       show-details: never
+
+logging:
+  pattern:
+    level: "%5p [cid=%X{correlationId:-}]"
+
+jolomo:
+  auth:
+    otp:
+      # Секрет для HMAC-хеша кодов. Обязателен, из окружения: export OTP_PEPPER=$(openssl rand -hex 32)
+      pepper: ${OTP_PEPPER:}
+      ttl-seconds: 300
+      max-attempts: 5
+      resend-interval-seconds: 60
+      max-per-hour: 5
+  sms:
+    gateway: fake
+    fake:
+      # true только локально: печатает текст SMS (с кодом) в лог. Никогда не включать вне dev.
+      log-body: ${SMS_FAKE_LOG_BODY:false}
