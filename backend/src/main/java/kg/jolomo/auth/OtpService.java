@@ -70,6 +70,13 @@ public class OtpService {
             if (latest.isPresent() && now.isBefore(latest.get().plus(settings.resendInterval()))) {
                 throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "OTP_TOO_SOON", "error.otp.too_soon");
             }
+            Integer lastMinuteAll = jdbc.sql("SELECT count(*) FROM auth_challenges WHERE created_at > :since")
+                    .param("since", utc(now.minusSeconds(60)))
+                    .query(Integer.class)
+                    .single();
+            if (lastMinuteAll >= settings.maxGlobalPerMinute()) {
+                throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "OTP_BUSY", "error.otp.busy");
+            }
             Integer lastHour = jdbc.sql("""
                             SELECT count(*) FROM auth_challenges
                             WHERE phone = :phone AND purpose = :purpose AND created_at > :since
@@ -108,7 +115,9 @@ public class OtpService {
                     .param("now", utc(now))
                     .update();
 
-            sms.enqueue("otp:" + id, phone, "JolOmo: ваш код " + code + ". Никому его не сообщайте.");
+            // Текст пока только на русском; каталоги KY/RU/EN появятся в SP11-03. SMS с просроченным кодом не шлём.
+            sms.enqueue(
+                    "otp:" + id, phone, "JolOmo: ваш код " + code + ". Никому его не сообщайте.", expiresAt);
             return new Issued(id, expiresAt, settings.resendInterval().toSeconds());
         });
     }
@@ -168,7 +177,10 @@ public class OtpService {
         });
     }
 
-    /** Материал проверки не должен жить дольше суток после истечения (ТЗ). Вызывается по расписанию. */
+    /**
+     * ТЗ разрешает хранить материал проверки до 24 часов после истечения; мы чистим строже, через час.
+     * Вызывается по расписанию.
+     */
     public int purgeStaleMaterial() {
         return jdbc.sql("""
                         UPDATE auth_challenges SET code_hash = NULL

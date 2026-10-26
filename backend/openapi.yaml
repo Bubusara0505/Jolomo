@@ -1,0 +1,184 @@
+openapi: 3.0.3
+info:
+  title: JolOmo API
+  version: 0.2.0
+  description: |
+    Контракт спринта 2 (вход по телефону, сессии). Любая ошибка приходит одним конвертом ApiError.
+    Сессия живёт в cookie (HttpOnly; Secure; SameSite=Lax), токенов в теле ответа и в localStorage нет.
+    Мутации, отправленные с cookie сессии, требуют заголовок X-CSRF-Token, равный cookie jl_csrf.
+servers:
+  - url: http://localhost:8080
+paths:
+  /actuator/health:
+    get:
+      summary: Health
+      responses:
+        '200':
+          description: Сервис жив
+  /api/v1/auth/otp/request:
+    post:
+      summary: Запросить код входа по SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpRequest' }
+      responses:
+        '202':
+          description: Код поставлен в очередь SMS. Сам код в ответе не возвращается.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpIssued' }
+        '400': { $ref: '#/components/responses/Error' }
+        '429':
+          description: OTP_TOO_SOON, OTP_RESEND_LIMIT или OTP_BUSY
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/auth/otp/verify:
+    post:
+      summary: Подтвердить код и начать сессию
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerify' }
+      responses:
+        '200':
+          description: Сессия создана, cookie jl_access, jl_refresh и jl_csrf выставлены.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpVerified' }
+        '400':
+          description: OTP_INVALID или OTP_EXPIRED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '403':
+          description: USER_SUSPENDED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '429':
+          description: OTP_ATTEMPTS_EXHAUSTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/auth/refresh:
+    post:
+      summary: Обменять refresh на новую пару (ротация)
+      description: |
+        Refresh берётся из cookie jl_refresh. Отправляйте запросы refresh по одному:
+        повторное использование уже обмененного токена отзывает всё семейство.
+      security: [{ csrf: [] }]
+      responses:
+        '204':
+          description: Cookie обновлены
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '401':
+          description: SESSION_INVALID или SESSION_REUSED. Cookie очищены, нужен новый вход.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '403':
+          description: CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/auth/logout:
+    post:
+      summary: Выйти (отзывает семейство, очищает cookie)
+      security: [{ csrf: [] }]
+      responses:
+        '204':
+          description: Готово
+        '403':
+          description: CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/auth/csrf:
+    get:
+      summary: Получить CSRF-токен, если cookie jl_csrf потерялась
+      responses:
+        '200':
+          description: Токен (и Set-Cookie, если cookie не было)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken: { type: string }
+  /api/v1/me:
+    get:
+      summary: Текущий пользователь
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Только сам субъект
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  phone: { type: string }
+        '401':
+          description: UNAUTHENTICATED. Попробуйте refresh, затем вход.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: jl_access
+    csrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  responses:
+    Error:
+      description: Ошибка
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code: { type: string, example: OTP_INVALID }
+        message: { type: string, description: Ключ перевода, example: error.otp.invalid }
+        correlationId: { type: string }
+    OtpRequest:
+      type: object
+      required: [phone, purpose]
+      properties:
+        phone: { type: string, pattern: '^\+996\d{9}$', example: '+996555000000' }
+        purpose: { type: string, enum: [LOGIN] }
+    OtpIssued:
+      type: object
+      properties:
+        challengeId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        resendAfterSeconds: { type: integer }
+    OtpVerify:
+      type: object
+      required: [challengeId, phone, purpose, code]
+      properties:
+        challengeId: { type: string, format: uuid }
+        phone: { type: string, pattern: '^\+996\d{9}$' }
+        purpose: { type: string, enum: [LOGIN] }
+        code: { type: string, pattern: '^\d{6}$' }
+    OtpVerified:
+      type: object
+      properties:
+        verified: { type: boolean }
+        userId: { type: string, format: uuid }

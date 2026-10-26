@@ -3,7 +3,7 @@ package kg.jolomo.auth;
 import java.time.Duration;
 
 public record OtpSettings(
-        String pepper, Duration ttl, int maxAttempts, Duration resendInterval, int maxPerHour) {
+        String pepper, Duration ttl, int maxAttempts, Duration resendInterval, int maxPerHour, int maxGlobalPerMinute) {
 
     public OtpSettings {
         if (pepper == null || pepper.isBlank()) {

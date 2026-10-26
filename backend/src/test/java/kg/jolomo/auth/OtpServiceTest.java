@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import kg.jolomo.shared.ApiException;
+import kg.jolomo.sms.SmsBodyCipher;
 import kg.jolomo.sms.SmsOutboxService;
 import kg.jolomo.testsupport.MutableClock;
 import kg.jolomo.testsupport.PostgisTestBase;
@@ -21,10 +22,12 @@ class OtpServiceTest extends PostgisTestBase {
     private static final String OTHER_PHONE = "+996555000111";
 
     private final MutableClock clock = new MutableClock();
-    private final OtpSettings settings = new OtpSettings("test-pepper", Duration.ofMinutes(5), 5, Duration.ofSeconds(60), 5);
+    private final OtpSettings settings = new OtpSettings("test-pepper", Duration.ofMinutes(5), 5, Duration.ofSeconds(60), 5, 30);
+
+    private final SmsBodyCipher cipher = new SmsBodyCipher(TEST_SMS_KEY);
 
     private OtpService service() {
-        SmsOutboxService sms = new SmsOutboxService(jdbc, tx, (c, p, b) -> true, clock);
+        SmsOutboxService sms = new SmsOutboxService(jdbc, tx, (c, p, b) -> true, cipher, clock);
         return new OtpService(jdbc, tx, sms, clock, settings);
     }
 
@@ -34,7 +37,7 @@ class OtpServiceTest extends PostgisTestBase {
                 .param("c", "otp:" + challengeId)
                 .query(String.class)
                 .single();
-        Matcher m = Pattern.compile("(\\d{6})").matcher(body);
+        Matcher m = Pattern.compile("(\\d{6})").matcher(cipher.decrypt(body, "otp:" + challengeId));
         assertThat(m.find()).isTrue();
         return m.group(1);
     }
@@ -153,5 +156,47 @@ class OtpServiceTest extends PostgisTestBase {
                         .query(String.class)
                         .optional())
                 .isEmpty();
+    }
+
+    @Test
+    void smsBodyIsEncryptedAtRestAndExpiresWithTheCode() {
+        OtpService otp = service();
+        UUID id = otp.request(PHONE, Purpose.LOGIN).challengeId();
+        String code = lastCode(id);
+
+        String raw = jdbc.sql("SELECT body FROM sms_messages WHERE command_id = :c")
+                .param("c", "otp:" + id)
+                .query(String.class)
+                .single();
+        assertThat(raw).doesNotContain(code).doesNotContain("JolOmo");
+
+        // Шлюз недоступен, код истёк: сообщение не отправляем и текст стираем.
+        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        SmsOutboxService sms = new SmsOutboxService(jdbc, tx, (c, p, b) -> false, cipher, clock);
+        sms.dispatchPending(10);
+
+        assertThat(jdbc.sql("SELECT status FROM sms_messages WHERE command_id = :c")
+                        .param("c", "otp:" + id)
+                        .query(String.class)
+                        .single())
+                .isEqualTo("FAILED");
+        assertThat(jdbc.sql("SELECT body FROM sms_messages WHERE command_id = :c")
+                        .param("c", "otp:" + id)
+                        .query(String.class)
+                        .optional())
+                .isEmpty();
+    }
+
+    @Test
+    void globalRequestLimitProtectsSmsBudget() {
+        OtpSettings tight = new OtpSettings("test-pepper", Duration.ofMinutes(5), 5, Duration.ofSeconds(60), 5, 2);
+        SmsOutboxService sms = new SmsOutboxService(jdbc, tx, (c, p, b) -> true, cipher, clock);
+        OtpService otp = new OtpService(jdbc, tx, sms, clock, tight);
+
+        otp.request("+996555000001", Purpose.LOGIN);
+        otp.request("+996555000002", Purpose.LOGIN);
+
+        assertThatThrownBy(() -> otp.request("+996555000003", Purpose.LOGIN))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo("OTP_BUSY"));
     }
 }

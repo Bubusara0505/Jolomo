@@ -15,6 +15,11 @@ java {
     }
 }
 
+// Фиксация версий зависимостей (SP01-02). Один раз: ./gradlew dependencies --write-locks, затем закоммитить gradle.lockfile.
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 repositories {
     mavenCentral()
 }

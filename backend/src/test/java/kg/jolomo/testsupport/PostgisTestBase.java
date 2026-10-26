@@ -26,11 +26,14 @@ public abstract class PostgisTestBase {
     }
 
     protected final JdbcClient jdbc = JdbcClient.create(DATA_SOURCE);
+    /** Тестовый ключ шифрования SMS (32 байта в base64). */
+    protected static final String TEST_SMS_KEY = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=";
+
     protected final TransactionOperations tx =
             new TransactionTemplate(new DataSourceTransactionManager(DATA_SOURCE));
 
     @BeforeEach
     protected void cleanTables() {
-        jdbc.sql("TRUNCATE sms_messages, auth_challenges").update();
+        jdbc.sql("TRUNCATE sms_messages, auth_challenges, refresh_sessions, users CASCADE").update();
     }
 }

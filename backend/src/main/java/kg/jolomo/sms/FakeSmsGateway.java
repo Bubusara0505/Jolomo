@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
 /** Имитатор шлюза: SMS не отправляет. Текст (с кодом) пишет в лог только при явном dev-флаге. */
@@ -15,7 +17,11 @@ public class FakeSmsGateway implements SmsGateway {
 
     private final boolean logBody;
 
-    public FakeSmsGateway(@Value("${jolomo.sms.fake.log-body:false}") boolean logBody) {
+    public FakeSmsGateway(@Value("${jolomo.sms.fake.log-body:false}") boolean logBody, Environment env) {
+        // Код в журнале нарушает правило ТЗ, поэтому разрешаем только в профиле dev.
+        if (logBody && !env.acceptsProfiles(Profiles.of("dev"))) {
+            throw new IllegalStateException("SMS_FAKE_LOG_BODY=true допустим только с профилем dev (SPRING_PROFILES_ACTIVE=dev)");
+        }
         this.logBody = logBody;
     }
 

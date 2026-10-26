@@ -35,8 +35,18 @@ jolomo:
       max-attempts: 5
       resend-interval-seconds: 60
       max-per-hour: 5
+      max-global-per-minute: 30
+    session:
+      # Секрет подписи access-токенов, не короче 32 символов: export SESSION_SECRET=$(openssl rand -hex 32)
+      secret: ${SESSION_SECRET:}
+      access-ttl-seconds: 900
+      refresh-ttl-days: 30
+      # true всегда, кроме экзотики: Chrome и Firefox принимают Secure-cookie и на http://localhost
+      cookie-secure: ${COOKIE_SECURE:true}
   sms:
+    # Ключ шифрования текста SMS в outbox (AES-256): export SMS_BODY_KEY=$(openssl rand -base64 32)
+    body-key: ${SMS_BODY_KEY:}
     gateway: fake
     fake:
-      # true только локально: печатает текст SMS (с кодом) в лог. Никогда не включать вне dev.
+      # true только локально и только с SPRING_PROFILES_ACTIVE=dev: печатает текст SMS (с кодом) в лог.
       log-body: ${SMS_FAKE_LOG_BODY:false}

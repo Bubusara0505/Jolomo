@@ -20,7 +20,7 @@ class SmsOutboxServiceTest extends PostgisTestBase {
     };
 
     private SmsOutboxService service() {
-        return new SmsOutboxService(jdbc, tx, gateway, clock);
+        return new SmsOutboxService(jdbc, tx, gateway, new SmsBodyCipher(TEST_SMS_KEY), clock);
     }
 
     private String status(String cmd) {
@@ -39,11 +39,11 @@ class SmsOutboxServiceTest extends PostgisTestBase {
     }
 
     @Test
-    void pendingRowSurvivesRestartAndGatewayAcceptanceMeansSubmittedOnly() {
+    void queuedRowSurvivesRestartAndGatewayAcceptanceMeansSubmittedOnly() {
         service().enqueue("cmd-2", "+996555000000", "secret body");
         // «Рестарт»: новый экземпляр сервиса над той же БД видит ожидающую строку.
         SmsOutboxService afterRestart = service();
-        assertThat(status("cmd-2")).isEqualTo("PENDING");
+        assertThat(status("cmd-2")).isEqualTo("QUEUED");
 
         assertThat(afterRestart.dispatchPending(10)).isEqualTo(1);
 
@@ -52,6 +52,24 @@ class SmsOutboxServiceTest extends PostgisTestBase {
                         .query(String.class)
                         .optional())
                 .isEmpty(); // текст (с возможным кодом) стёрт после отправки
+    }
+
+    @Test
+    void bodyIsEncryptedAtRestAndGatewayGetsPlainText() {
+        java.util.concurrent.atomic.AtomicReference<String> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        SmsOutboxService s = new SmsOutboxService(jdbc, tx, (c, p, b) -> {
+            seen.set(b);
+            return true;
+        }, new SmsBodyCipher(TEST_SMS_KEY), clock);
+        s.enqueue("cmd-enc", "+996555000000", "код 123456");
+
+        String stored = jdbc.sql("SELECT body FROM sms_messages WHERE command_id = 'cmd-enc'")
+                .query(String.class)
+                .single();
+        assertThat(stored).doesNotContain("123456");
+
+        s.dispatchPending(10);
+        assertThat(seen.get()).isEqualTo("код 123456");
     }
 
     @Test
@@ -67,14 +85,14 @@ class SmsOutboxServiceTest extends PostgisTestBase {
     }
 
     @Test
-    void rejectedMessageStaysPendingThenFailsAfterMaxAttempts() {
+    void rejectedMessageStaysQueuedThenFailsAfterMaxAttempts() {
         SmsOutboxService s = service();
         s.enqueue("cmd-4", "+996555000000", "x");
         gatewayAccepts = false;
 
         for (int i = 0; i < SmsOutboxService.MAX_ATTEMPTS - 1; i++) {
             s.dispatchPending(10);
-            assertThat(status("cmd-4")).isEqualTo("PENDING");
+            assertThat(status("cmd-4")).isEqualTo("QUEUED");
         }
         s.dispatchPending(10);
 
