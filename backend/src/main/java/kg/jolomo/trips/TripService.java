@@ -70,15 +70,24 @@ public class TripService {
     private final EligibilityService eligibility;
     private final DriverProfileService profiles;
     private final DomainEventStore events;
+    private final java.util.List<TripCancellationListener> cancellationListeners;
 
     public TripService(JdbcClient jdbc, TransactionOperations tx, Clock clock, EligibilityService eligibility,
                        DriverProfileService profiles, DomainEventStore events) {
+        this(jdbc, tx, clock, eligibility, profiles, events, java.util.List.of());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TripService(JdbcClient jdbc, TransactionOperations tx, Clock clock, EligibilityService eligibility,
+                       DriverProfileService profiles, DomainEventStore events,
+                       java.util.List<TripCancellationListener> cancellationListeners) {
         this.jdbc = jdbc;
         this.tx = tx;
         this.clock = clock;
         this.eligibility = eligibility;
         this.profiles = profiles;
         this.events = events;
+        this.cancellationListeners = cancellationListeners;
     }
 
     public Trip createDraft(UUID ownerId, TripDraft d) {
@@ -296,6 +305,10 @@ public class TripService {
                         .param("id", tripId)
                         .update();
                 emit("TRIP_CANCELLED", tripId, ownerId, statusChange(r.status().name(), "CANCELLED"));
+                // Активные брони снимаются в этой же транзакции: поездки нет, значит и мест нет.
+                for (TripCancellationListener listener : cancellationListeners) {
+                    listener.onTripCancelled(tripId, ownerId);
+                }
             }
             return find(tripId).orElseThrow();
         });

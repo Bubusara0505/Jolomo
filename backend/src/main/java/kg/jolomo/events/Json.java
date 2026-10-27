@@ -3,11 +3,11 @@ package kg.jolomo.events;
 import java.util.Map;
 
 /** Минимальная запись JSON для payload событий: объекты, строки, числа, булевы, null. Остальное пишется строкой. */
-final class Json {
+public final class Json {
 
     private Json() {}
 
-    static String write(Object value) {
+    public static String write(Object value) {
         StringBuilder sb = new StringBuilder();
         write(sb, value);
         return sb.toString();

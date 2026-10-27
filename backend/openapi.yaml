@@ -625,6 +625,185 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/trips/{tripId}/bookings:
+    parameters:
+      - { name: tripId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Запросить места в поездке (SP06-01, SP06-03)
+      description: |
+        Запрос ничего не занимает: места занимает только принятие водителем. Заголовок Idempotency-Key обязателен
+        (8-128 символов A-Z a-z 0-9 . _ -). Тот же ключ и то же тело (поездка и число мест) возвращают сохранённый ответ
+        с заголовком Idempotent-Replayed: true, в том числе после рестарта. Другое тело с тем же ключом это 409
+        IDEMPOTENCY_KEY_REUSED. Отказы не сохраняются. В ответе нет телефонов.
+      security: [{ accessCookie: [], csrf: [] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seats]
+              properties:
+                seats: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: Бронь в состоянии REQUESTED (или сохранённый ответ при повторе)
+          headers:
+            Idempotent-Replayed: { schema: { type: string, enum: ['true'] }, description: Только при повторе }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '400':
+          description: INVALID_SEATS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: OWN_TRIP, USER_NOT_ACTIVE или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: TRIP_NOT_FOUND (нет такой, не опубликована или отменена)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: NOT_ENOUGH_SEATS, TRIP_DEPARTED, BOOKING_ALREADY_ACTIVE, IDEMPOTENCY_KEY_REUSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+    get:
+      summary: Запросы на свою поездку (водителю)
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Брони поездки, старые первыми
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: TRIP_NOT_FOUND (чужая поездка не отличима от несуществующей)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/mine:
+    get:
+      summary: Мои запросы и брони, новые первыми
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/bookings/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Бронь видят только её пассажир и водитель поездки
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: BOOKING_NOT_FOUND (чужая бронь не отличима от несуществующей)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/accept:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель принимает запрос (SP06-02)
+      description: |
+        Под блокировкой поездки проверяет места и списывает их: у последнего места один победитель. Повтор принятия
+        безопасен и места второй раз не списывает. Нужен допуск водителя (правило MANAGE_BOOKINGS).
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Бронь в состоянии ACCEPTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: NOT_A_DRIVER, NOT_APPROVED или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: BOOKING_NOT_FOUND (не владелец поездки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: NO_SEATS_LEFT, INVALID_BOOKING_STATE, INVALID_TRIP_STATE, TRIP_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель отклоняет запрос (места не меняются, повтор безопасен)
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Бронь в состоянии REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: BOOKING_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_BOOKING_STATE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/cancel:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Отмена брони
+      description: |
+        Пассажир отменяет свой запрос или принятую бронь, водитель только принятую. После отправления отмены нет.
+        Места возвращаются один раз, при переходе ACCEPTED -> CANCELLED; повтор безопасен.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Бронь в состоянии CANCELLED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: BOOKING_NOT_FOUND (не участник брони)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_BOOKING_STATE, TRIP_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:
@@ -761,3 +940,17 @@ components:
       properties:
         verified: { type: boolean }
         userId: { type: string, format: uuid }
+    Booking:
+      type: object
+      description: Бронь без телефонов и документов. Контакты откроет SP07-01 после ACCEPTED.
+      properties:
+        id: { type: string, format: uuid }
+        tripId: { type: string, format: uuid }
+        passengerId: { type: string, format: uuid }
+        seats: { type: integer, minimum: 1 }
+        status: { type: string, enum: [REQUESTED, ACCEPTED, REJECTED, CANCELLED, COMPLETED, NO_SHOW, REVIEW_REQUIRED] }
+        priceKgs: { type: integer, description: Цена одного места на момент запроса, в сомах }
+        totalKgs: { type: integer, description: seats * priceKgs }
+        currency: { type: string, enum: [KGS] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

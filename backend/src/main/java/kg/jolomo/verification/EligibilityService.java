@@ -44,4 +44,19 @@ public class EligibilityService {
         }
         return new Decision(true, Reason.OK);
     }
+
+    /** Принимать и отклонять запросы на места может водитель с профилем в статусе из правил MANAGE_BOOKINGS. */
+    public Decision canManageBookings(UUID userId) {
+        var profile = profiles.find(userId);
+        if (profile.isEmpty()) {
+            return new Decision(false, Reason.NOT_A_DRIVER);
+        }
+        Boolean allowedStatus = jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM eligibility_rules WHERE action = 'MANAGE_BOOKINGS' AND profile_status = :s)
+                        """)
+                .param("s", profile.get().status().name())
+                .query(Boolean.class)
+                .single();
+        return allowedStatus ? new Decision(true, Reason.OK) : new Decision(false, Reason.NOT_APPROVED);
+    }
 }
