@@ -36,7 +36,8 @@ class TripServiceTest extends PostgisTestBase {
         AuditLog audit = new AuditLog(jdbc, clock);
         profiles = new DriverProfileService(jdbc, tx, clock, audit);
         obligations = new ObligationConfigService(jdbc, tx, clock, audit);
-        trips = new TripService(jdbc, tx, clock, new EligibilityService(jdbc, profiles, obligations), profiles);
+        trips = new TripService(jdbc, tx, clock, new EligibilityService(jdbc, profiles, obligations), profiles,
+                new kg.jolomo.events.DomainEventStore(jdbc, tx, clock));
         driver = newUser("+996555000060");
         profiles.create(driver);
         bishkekPoint = point("BISHKEK_WEST_BUS_STATION");

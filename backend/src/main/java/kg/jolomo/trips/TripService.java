@@ -6,6 +6,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import kg.jolomo.events.DomainEventStore;
 import kg.jolomo.shared.ApiException;
 import kg.jolomo.verification.DriverProfileService;
 import kg.jolomo.verification.EligibilityService;
@@ -66,14 +69,16 @@ public class TripService {
     private final Clock clock;
     private final EligibilityService eligibility;
     private final DriverProfileService profiles;
+    private final DomainEventStore events;
 
     public TripService(JdbcClient jdbc, TransactionOperations tx, Clock clock, EligibilityService eligibility,
-                       DriverProfileService profiles) {
+                       DriverProfileService profiles, DomainEventStore events) {
         this.jdbc = jdbc;
         this.tx = tx;
         this.clock = clock;
         this.eligibility = eligibility;
         this.profiles = profiles;
+        this.events = events;
     }
 
     public Trip createDraft(UUID ownerId, TripDraft d) {
@@ -82,6 +87,7 @@ public class TripService {
             throw new ApiException(HttpStatus.FORBIDDEN, "NOT_A_DRIVER", "error.trip.notDriver");
         }
         UUID id = UUID.randomUUID();
+        return tx.execute(txStatus -> {
         OffsetDateTime now = utc(clock.instant());
         jdbc.sql("""
                         INSERT INTO trips
@@ -102,7 +108,18 @@ public class TripService {
                 .param("price", d.priceKgs())
                 .param("now", now)
                 .update();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("direction", d.direction());
+        payload.put("pickupLocationId", d.pickupLocationId());
+        payload.put("departureFrom", d.departureFrom());
+        payload.put("departureTo", d.departureTo());
+        payload.put("seatsTotal", d.seatsTotal());
+        payload.put("priceKgs", d.priceKgs());
+        payload.put("parcelSlotsTotal", d.parcelSlotsTotal());
+        payload.put("status", "DRAFT");
+        emit("TRIP_CREATED", id, ownerId, payload);
         return find(id).orElseThrow();
+        });
     }
 
     /** Все проверки полей поездки, общие для создания и правки черновика. */
@@ -167,6 +184,7 @@ public class TripService {
                     .param("now", now)
                     .param("id", tripId)
                     .update();
+            emit("TRIP_PUBLISHED", tripId, ownerId, statusChange("DRAFT", "PUBLISHED"));
             return find(tripId).orElseThrow();
         });
     }
@@ -253,7 +271,12 @@ public class TripService {
                 }
                 default -> throw new ApiException(HttpStatus.CONFLICT, "INVALID_TRIP_STATE", "error.trip.invalidState");
             }
-            return find(tripId).orElseThrow();
+            Trip after = find(tripId).orElseThrow();
+            Map<String, Object> changes = diff(r, after);
+            if (!changes.isEmpty()) {
+                emit("TRIP_UPDATED", tripId, ownerId, Map.of("changes", changes));
+            }
+            return after;
         });
     }
 
@@ -272,6 +295,7 @@ public class TripService {
                         .param("now", utc(clock.instant()))
                         .param("id", tripId)
                         .update();
+                emit("TRIP_CANCELLED", tripId, ownerId, statusChange(r.status().name(), "CANCELLED"));
             }
             return find(tripId).orElseThrow();
         });
@@ -346,6 +370,41 @@ public class TripService {
                 Direction.valueOf(rs.getString(4)), rs.getObject(5, UUID.class),
                 rs.getObject(6, OffsetDateTime.class).toInstant(), rs.getObject(7, OffsetDateTime.class).toInstant(),
                 rs.getInt(8), rs.getInt(9), rs.getInt(10), rs.getInt(11), rs.getInt(12));
+    }
+
+    private static final String AGGREGATE = "TRIP";
+
+    private void emit(String type, UUID tripId, UUID actor, Map<String, Object> payload) {
+        events.append(AGGREGATE, tripId, type, actor, payload);
+    }
+
+    private static Map<String, Object> statusChange(String from, String to) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("from", from);
+        m.put("to", to);
+        return m;
+    }
+
+    /** Что изменилось в поездке: поле -> {from, to}. Пусто, если правка ничего не поменяла. */
+    private static Map<String, Object> diff(Row before, Trip after) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        change(m, "direction", before.direction(), after.direction());
+        change(m, "pickupLocationId", before.pickupId(), after.pickupLocationId());
+        change(m, "departureFrom", before.from(), after.departureFrom());
+        change(m, "departureTo", before.to(), after.departureTo());
+        change(m, "seatsTotal", before.seatsTotal(), after.seatsTotal());
+        change(m, "parcelSlotsTotal", before.parcelsTotal(), after.parcelSlotsTotal());
+        change(m, "priceKgs", before.price(), after.priceKgs());
+        return m;
+    }
+
+    private static void change(Map<String, Object> m, String field, Object from, Object to) {
+        if (!from.equals(to)) {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("from", from);
+            c.put("to", to);
+            m.put(field, c);
+        }
     }
 
     private static ApiException bad(String code) {

@@ -79,3 +79,9 @@ H2 не используется.
 В ответе только публичные поля: направление, окно, точка (код, названия KY/RU/EN, координаты), свободные места, цена в KGS. Ни владельца, ни телефонов.
 
 План запроса: тест `TripSearchExplainTest` пишет `EXPLAIN (ANALYZE, BUFFERS)` в `backend/build/explain/trip-search.txt`. Запись плана хранится в `backend/docs/explain-trip-search.txt`.
+
+## Журнал событий (SP05-04)
+Таблица `domain_events` append-only: триггер базы запрещает UPDATE и DELETE. Событие пишется в той же транзакции, что и изменение поездки
+(`TRIP_CREATED`, `TRIP_UPDATED`, `TRIP_PUBLISHED`, `TRIP_CANCELLED`), у каждой сущности версии 1, 2, 3 без дублей и пропусков.
+Повтор записи с тем же `event id` игнорируется (`DomainEventStore.append(eventId, ...)` вернёт `false`). Отказанные операции и правки без изменений событий не пишут.
+В payload только идентификаторы и значения полей поездки, без телефонов. Журнал не имеет HTTP-маршрутов.

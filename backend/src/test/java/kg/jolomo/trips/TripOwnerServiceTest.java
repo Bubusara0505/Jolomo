@@ -38,7 +38,8 @@ class TripOwnerServiceTest extends PostgisTestBase {
         AuditLog audit = new AuditLog(jdbc, clock);
         profiles = new DriverProfileService(jdbc, tx, clock, audit);
         ObligationConfigService obligations = new ObligationConfigService(jdbc, tx, clock, audit);
-        trips = new TripService(jdbc, tx, clock, new EligibilityService(jdbc, profiles, obligations), profiles);
+        trips = new TripService(jdbc, tx, clock, new EligibilityService(jdbc, profiles, obligations), profiles,
+                new kg.jolomo.events.DomainEventStore(jdbc, tx, clock));
         obligations.load(ObligationConfigService.TRIP_PUBLISH, "v1", ADMIN);
         driver = driver("+996555000070");
         other = driver("+996555000071");
