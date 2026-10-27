@@ -35,9 +35,13 @@ class CsrfFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
+    /** Cookie администратора (модуль admin) тоже требует CSRF. */
+    private static final String ADMIN_COOKIE = "jl_admin";
+
     private static boolean hasSessionCookie(HttpServletRequest request) {
         return SessionCookies.read(request, SessionCookies.ACCESS).isPresent()
-                || SessionCookies.read(request, SessionCookies.REFRESH).isPresent();
+                || SessionCookies.read(request, SessionCookies.REFRESH).isPresent()
+                || SessionCookies.read(request, ADMIN_COOKIE).isPresent();
     }
 
     private static boolean csrfValid(HttpServletRequest request) {

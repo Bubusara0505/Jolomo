@@ -34,7 +34,7 @@ public abstract class PostgisTestBase {
 
     @BeforeEach
     protected void cleanTables() {
-        jdbc.sql("TRUNCATE sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events CASCADE")
+        jdbc.sql("TRUNCATE sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events, admin_sessions, admin_recovery_codes, admin_accounts CASCADE")
                 .update();
         // Данные-справочники возвращаем к состоянию миграций.
         jdbc.sql("UPDATE obligation_config SET enabled = false, version = NULL, loaded_at = NULL, loaded_by = NULL").update();

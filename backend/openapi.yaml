@@ -248,8 +248,150 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/admin/auth/login:
+    post:
+      summary: Вход администратора (пароль и TOTP или код восстановления в одном запросе)
+      description: |
+        Любая ошибка (неверный пароль, код, неизвестный логин, блокировка, отключённая запись) даёт один и тот же ответ.
+        После 5 неудач запись блокируется на 15 минут. Один TOTP-код нельзя использовать дважды.
+        Сессия живёт 30 минут без продления, cookie jl_admin (HttpOnly; Secure; SameSite=Strict; Path=/api/v1/admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password, code]
+              properties:
+                login: { type: string }
+                password: { type: string }
+                code: { type: string, description: 6 цифр TOTP или код восстановления вида XXXX-XXXX-XXXX-XXXX }
+      responses:
+        '200':
+          description: Сессия создана
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  admin: { $ref: '#/components/schemas/AdminView' }
+                  recoveryCodesLeft: { type: integer }
+        '401':
+          description: ADMIN_LOGIN_FAILED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/admin/auth/logout:
+    post:
+      summary: Выйти (отзывает сессию)
+      security: [{ adminCookie: [], csrf: [] }]
+      responses:
+        '204': { description: Готово }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/auth/me:
+    get:
+      summary: Текущий администратор
+      security: [{ adminCookie: [] }]
+      responses:
+        '200':
+          description: Администратор
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminView' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/auth/password:
+    post:
+      summary: Сменить свой пароль (остальные сессии отзываются)
+      security: [{ adminCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current, newPassword]
+              properties:
+                current: { type: string }
+                newPassword: { type: string, minLength: 12 }
+      responses:
+        '204': { description: Пароль изменён }
+        '400': { description: PASSWORD_TOO_WEAK }
+        '403': { description: ADMIN_PASSWORD_WRONG }
+  /api/v1/admin/accounts:
+    post:
+      summary: Создать администратора (только OWNER). Секреты показываются один раз.
+      security: [{ adminCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, displayName, role, reasonCode]
+              properties:
+                login: { type: string, pattern: '^[a-z0-9._-]{3,64}$' }
+                displayName: { type: string }
+                role: { type: string, enum: [REVIEWER, SUPPORT, OWNER] }
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '201':
+          description: Данные для первого входа (пароль, ключ TOTP, коды восстановления)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrollment' }
+        '403': { description: ADMIN_FORBIDDEN }
+        '409': { description: ADMIN_EXISTS }
+  /api/v1/admin/accounts/{id}/disable:
+    post:
+      summary: Отключить администратора (сессии отзываются сразу)
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string }
+      responses:
+        '204': { description: Готово }
+        '403': { description: ADMIN_FORBIDDEN }
+        '409': { description: CANNOT_TARGET_SELF }
+  /api/v1/admin/accounts/{id}/reset:
+    post:
+      summary: Сбросить пароль, TOTP и коды восстановления (потеря устройства)
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string }
+      responses:
+        '200':
+          description: Новые данные для входа, показываются один раз
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrollment' }
+        '403': { description: ADMIN_FORBIDDEN }
+        '409': { description: CANNOT_TARGET_SELF }
 components:
   securitySchemes:
+    adminCookie:
+      type: apiKey
+      in: cookie
+      name: jl_admin
     accessCookie:
       type: apiKey
       in: cookie
@@ -272,6 +414,22 @@ components:
         code: { type: string, example: OTP_INVALID }
         message: { type: string, description: Ключ перевода, example: error.otp.invalid }
         correlationId: { type: string }
+    AdminView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        login: { type: string }
+        displayName: { type: string }
+        role: { type: string, enum: [REVIEWER, SUPPORT, OWNER] }
+    Enrollment:
+      type: object
+      properties:
+        adminId: { type: string, format: uuid }
+        login: { type: string }
+        password: { type: string }
+        totpSecret: { type: string }
+        otpauthUri: { type: string }
+        recoveryCodes: { type: array, items: { type: string } }
     DriverProfile:
       type: object
       properties:

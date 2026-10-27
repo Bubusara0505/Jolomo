@@ -44,6 +44,16 @@ class CsrfFilterTest {
     }
 
     @Test
+    void adminCookieAlsoRequiresCsrf() throws Exception {
+        mvc.perform(post("/probe").cookie(new Cookie("jl_admin", "x"), new Cookie("jl_csrf", "t1")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/probe")
+                        .cookie(new Cookie("jl_admin", "x"), new Cookie("jl_csrf", "t1"))
+                        .header("X-CSRF-Token", "t1"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void mismatchedHeaderIsRejected() throws Exception {
         mvc.perform(post("/probe")
                         .cookie(new Cookie("jl_refresh", "x"), new Cookie("jl_csrf", "t1"))

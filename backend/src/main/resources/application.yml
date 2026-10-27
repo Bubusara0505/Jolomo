@@ -37,6 +37,15 @@ logging:
     level: "%5p [cid=%X{correlationId:-}]"
 
 jolomo:
+  admin:
+    # Ключ шифрования секретов TOTP: export ADMIN_TOTP_KEY=$(openssl rand -base64 32)
+    totp-key: ${ADMIN_TOTP_KEY:}
+    # Только для создания первого администратора (см. README), потом убрать из окружения.
+    bootstrap-login: ${ADMIN_BOOTSTRAP_LOGIN:}
+    session-minutes: 30
+    max-failures: 5
+    lock-minutes: 15
+    pbkdf2-iterations: 600000
   identity:
     # Каталог зашифрованных файлов личности, вне репозитория. На хосте пилота он входит в набор копий.
     dir: ${IDENTITY_DIR:${user.home}/.jolomo/identity}

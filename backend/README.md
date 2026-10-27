@@ -3,7 +3,7 @@
 Java 21, Spring Boot (кандидат 4.1.1 по ТЗ), Gradle Kotlin DSL, PostgreSQL 16 + PostGIS, Flyway.
 
 ## Запуск
-1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`) и `IDENTITY_KEY` (`openssl rand -base64 32`, ключ файлов личности; потеряете ключ, потеряете файлы). Без любого из этих секретов приложение не стартует.
+1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`) `ADMIN_TOTP_KEY` (`openssl rand -base64 32`, шифрует секреты TOTP администраторов) и `IDENTITY_KEY` (`openssl rand -base64 32`, ключ файлов личности; потеряете ключ, потеряете файлы). Без любого из этих секретов приложение не стартует.
 2. `docker compose up -d` — локальная БД с PostGIS.
 3. `./gradlew bootRun` (переменные из `.env` экспортируйте в окружение). Чтобы видеть код SMS в логе: `SPRING_PROFILES_ACTIVE=dev SMS_FAKE_LOG_BODY=true ./gradlew bootRun`; без профиля `dev` флаг не даст стартовать.
 4. Проверка: `curl localhost:8080/actuator/health`.
@@ -41,3 +41,13 @@ H2 не используется.
 - При 401 `UNAUTHENTICATED` один раз вызвать refresh и повторить запрос. Запросы refresh отправлять строго по одному:
   два параллельных refresh одним токеном считаются кражей и отзывают сессию.
 - Реальные SMS не отправляются: фейковый шлюз. Текст SMS хранится в базе зашифрованным (`SMS_BODY_KEY`) и стирается после отправки.
+
+## Администраторы и первый вход
+Вход администратора: логин, пароль и TOTP (или одноразовый код восстановления). Сессия отдельная от пользовательской (cookie `jl_admin`, 30 минут).
+Права по ролям: `REVIEWER` проверяет заявки, `SUPPORT` принимает инциденты, `OWNER` может всё и один управляет учётными записями.
+
+Создать первого администратора (один раз, на пустой базе):
+1. `export ADMIN_TOTP_KEY=$(openssl rand -base64 32)` и `export ADMIN_BOOTSTRAP_LOGIN=owner`, остальные секреты как обычно.
+2. Запустить `./gradlew bootRun`. В консоли один раз напечатаются пароль, ключ TOTP и 8 кодов восстановления. Сохраните их в менеджере паролей, ключ TOTP добавьте в приложение-аутентификатор (ввод ключа вручную).
+3. Остановить приложение и убрать `ADMIN_BOOTSTRAP_LOGIN` из окружения.
+Потеря устройства: другой OWNER вызывает `POST /api/v1/admin/accounts/{id}/reset`. Если OWNER единственный, а коды восстановления потеряны, остаётся удалить его строку в `admin_accounts` и повторить создание.
