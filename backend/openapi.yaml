@@ -804,6 +804,32 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/contact:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Контакт другой стороны по принятой брони (SP07-01)
+      description: |
+        Единственный маршрут, который отдаёт телефон по броне. Пассажиру приходит телефон водителя, водителю телефон
+        пассажира. Пока бронь не ACCEPTED (и после отказа или отмены) контакта нет. Ответ с Cache-Control: no-store.
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Контакт другой стороны
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingContact' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: CONTACT_NOT_AVAILABLE (бронь не ACCEPTED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: BOOKING_NOT_FOUND (не участник брони не отличить от несуществующей брони)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:
@@ -954,3 +980,9 @@ components:
         currency: { type: string, enum: [KGS] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    BookingContact:
+      type: object
+      properties:
+        bookingId: { type: string, format: uuid }
+        role: { type: string, enum: [DRIVER, PASSENGER], description: Чей это телефон }
+        phone: { type: string, example: '+996555000000' }
