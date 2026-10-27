@@ -499,6 +499,100 @@ paths:
             application/pdf: { schema: { type: string, format: binary } }
         '404': { description: ACCESS_NOT_FOUND (неизвестный или чужой токен) }
         '410': { description: ACCESS_EXPIRED или OBJECT_UNAVAILABLE }
+  /api/v1/trips:
+    post:
+      summary: Создать черновик поездки (только водитель с профилем)
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TripCreate' }
+      responses:
+        '201':
+          description: Черновик создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnerTrip' }
+        '400':
+          description: "INVALID_DIRECTION, INVALID_REQUEST, INVALID_WINDOW, DEPARTURE_IN_PAST, INVALID_SEATS, INVALID_PRICE, INVALID_PARCEL_SLOTS, PICKUP_NOT_IN_CATALOG, PICKUP_WRONG_CITY"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '403':
+          description: NOT_A_DRIVER или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/trips/mine:
+    get:
+      summary: Мои поездки, новые первыми
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OwnerTrip' }
+  /api/v1/trips/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Владельцу своя поездка в любом статусе, остальным только опубликованная (публичный вид, без владельца)
+      responses:
+        '200':
+          description: OwnerTrip для владельца, PublicTrip для остальных
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/OwnerTrip' }
+                  - { $ref: '#/components/schemas/PublicTrip' }
+        '404':
+          description: TRIP_NOT_FOUND (чужой черновик не отличить от несуществующей)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+    patch:
+      summary: Правка полей ИЛИ смена статуса (PUBLISHED, CANCELLED), но не то и другое сразу
+      description: |
+        Черновик правится целиком. У опубликованной можно менять только priceKgs, seatsTotal и parcelSlotsTotal
+        (иначе 409 TRIP_FIELD_LOCKED). Публикация и правка опубликованной требуют допуска водителя и загруженного
+        выключателя обязательств (403 NOT_APPROVED, OBLIGATIONS_NOT_LOADED). Отмена доступна всегда и безопасна при повторе.
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TripPatch' }
+      responses:
+        '200':
+          description: Поездка после изменения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnerTrip' }
+        '400':
+          description: INVALID_REQUEST, INVALID_STATUS и коды проверки полей
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: TRIP_NOT_FOUND (в том числе чужая поездка)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_TRIP_STATE, TRIP_FIELD_LOCKED, CAPACITY_BELOW_TAKEN, DEPARTURE_IN_PAST
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:
@@ -520,6 +614,61 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
   schemas:
+    TripCreate:
+      type: object
+      required: [direction, pickupLocationId, departureFrom, departureTo, seatsTotal, priceKgs]
+      properties:
+        direction: { type: string, enum: [BISHKEK_TO_KARAKOL, KARAKOL_TO_BISHKEK] }
+        pickupLocationId: { type: string, format: uuid, description: Точка из каталога в городе отправления }
+        departureFrom: { type: string, format: date-time }
+        departureTo: { type: string, format: date-time }
+        seatsTotal: { type: integer, minimum: 1 }
+        priceKgs: { type: integer, minimum: 1, description: Цена места в целых сомах }
+        parcelSlotsTotal: { type: integer, minimum: 0, default: 0 }
+    TripPatch:
+      type: object
+      description: Любое подмножество полей TripCreate либо только status.
+      properties:
+        direction: { type: string, enum: [BISHKEK_TO_KARAKOL, KARAKOL_TO_BISHKEK] }
+        pickupLocationId: { type: string, format: uuid }
+        departureFrom: { type: string, format: date-time }
+        departureTo: { type: string, format: date-time }
+        seatsTotal: { type: integer }
+        priceKgs: { type: integer }
+        parcelSlotsTotal: { type: integer }
+        status: { type: string, enum: [PUBLISHED, CANCELLED] }
+    OwnerTrip:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, PUBLISHED, CANCELLED, COMPLETED] }
+        direction: { type: string }
+        pickupLocationId: { type: string, format: uuid }
+        departureFrom: { type: string, format: date-time }
+        departureTo: { type: string, format: date-time }
+        seatsTotal: { type: integer }
+        seatsAvailable: { type: integer }
+        priceKgs: { type: integer }
+        currency: { type: string, example: KGS }
+        parcelSlotsTotal: { type: integer }
+        parcelSlotsAvailable: { type: integer }
+    PublicTrip:
+      type: object
+      description: Без владельца, телефонов и документов.
+      properties:
+        id: { type: string, format: uuid }
+        direction: { type: string }
+        departureFrom: { type: string, format: date-time }
+        departureTo: { type: string, format: date-time }
+        pickupCode: { type: string }
+        pickupNameKy: { type: string }
+        pickupNameRu: { type: string }
+        pickupNameEn: { type: string }
+        pickupLatitude: { type: number }
+        pickupLongitude: { type: number }
+        seatsAvailable: { type: integer }
+        priceKgs: { type: integer }
+        currency: { type: string, example: KGS }
     ApiError:
       type: object
       required: [code, message, correlationId]
