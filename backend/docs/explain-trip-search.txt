@@ -1,0 +1,34 @@
+-- SP05-02: EXPLAIN (ANALYZE, BUFFERS) поиска поездок, 20000 строк в trips, PostGIS 16-3.4
+-- Параметры: направление BISHKEK_TO_KARAKOL, окно 7 дней вперёд, от точки Западного автовокзала, радиус 5 км
+
+Limit  (cost=17.14..349.22 rows=20 width=218) (actual time=14.170..14.175 rows=20 loops=1)
+  Buffers: shared hit=403
+  ->  Incremental Sort  (cost=17.14..7156.81 rows=430 width=218) (actual time=14.167..14.171 rows=20 loops=1)
+        Sort Key: t.departure_from, (st_distance(p.location, r.location, true)), t.id
+        Presorted Key: t.departure_from
+        Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 35kB  Peak Memory: 35kB
+        Buffers: shared hit=403
+        ->  Nested Loop  (cost=0.53..7137.46 rows=430 width=218) (actual time=14.028..14.093 rows=21 loops=1)
+              Join Filter: (p.id = t.pickup_location_id)
+              Buffers: shared hit=391
+              ->  Index Scan using trips_search on trips t  (cost=0.28..1723.47 rows=859 width=79) (actual time=1.307..1.328 rows=21 loops=1)
+                    Index Cond: ((direction = 'BISHKEK_TO_KARAKOL'::text) AND (departure_from <= '2026-11-02 15:00:00+06'::timestamp with time zone))
+                    Filter: ((seats_available >= 1) AND (departure_to > '2026-10-26 15:00:00+06'::timestamp with time zone) AND (departure_to >= '2026-10-26 15:00:00+06'::timestamp with time zone))
+                    Rows Removed by Filter: 1997
+                    Buffers: shared hit=258
+              ->  Materialize  (cost=0.25..21.81 rows=1 width=211) (actual time=0.604..0.605 rows=1 loops=21)
+                    Buffers: shared hit=133
+                    ->  Nested Loop  (cost=0.25..21.80 rows=1 width=211) (actual time=12.676..12.684 rows=1 loops=1)
+                          Buffers: shared hit=133
+                          ->  Seq Scan on pickup_locations r  (cost=0.00..1.02 rows=1 width=32) (actual time=0.006..0.008 rows=1 loops=1)
+                                Filter: (id = 'db7bd790-523c-4312-af05-87fb57b735c6'::uuid)
+                                Rows Removed by Filter: 1
+                                Buffers: shared hit=1
+                          ->  Index Scan using pickup_locations_gix on pickup_locations p  (cost=0.25..20.77 rows=1 width=179) (actual time=12.628..12.634 rows=1 loops=1)
+                                Index Cond: (location && _st_expand(r.location, '5000'::double precision))
+                                Filter: st_dwithin(location, r.location, '5000'::double precision, true)
+                                Buffers: shared hit=132
+Planning:
+  Buffers: shared hit=357 read=4 dirtied=1
+Planning Time: 13.682 ms
+Execution Time: 14.420 ms

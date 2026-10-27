@@ -500,6 +500,38 @@ paths:
         '404': { description: ACCESS_NOT_FOUND (неизвестный или чужой токен) }
         '410': { description: ACCESS_EXPIRED или OBJECT_UNAVAILABLE }
   /api/v1/trips:
+    get:
+      summary: Публичный поиск поездок (вход не нужен)
+      description: |
+        Только опубликованные, не просроченные, не полные поездки выбранного направления. Окно отправления задаётся
+        пересечением; расстояние в метрах от точки каталога. Без владельца, телефонов и документов.
+      parameters:
+        - { name: direction, in: query, required: true, schema: { type: string, enum: [BISHKEK_TO_KARAKOL, KARAKOL_TO_BISHKEK] } }
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: По умолчанию сейчас }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: nearPickupLocationId, in: query, schema: { type: string, format: uuid } }
+        - { name: radiusMeters, in: query, schema: { type: integer, minimum: 1, maximum: 100000, default: 5000 } }
+        - { name: seats, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+      responses:
+        '200':
+          description: Страница результатов, по времени отправления, затем по расстоянию
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SearchHit' }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        '400':
+          description: INVALID_DIRECTION, INVALID_WINDOW, INVALID_SEATS, INVALID_LIMIT, INVALID_OFFSET, INVALID_RADIUS, PICKUP_NOT_IN_CATALOG
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
     post:
       summary: Создать черновик поездки (только водитель с профилем)
       security: [{ accessCookie: [], csrf: [] }]
@@ -652,6 +684,12 @@ components:
         currency: { type: string, example: KGS }
         parcelSlotsTotal: { type: integer }
         parcelSlotsAvailable: { type: integer }
+    SearchHit:
+      allOf:
+        - $ref: '#/components/schemas/PublicTrip'
+        - type: object
+          properties:
+            distanceMeters: { type: number, nullable: true, description: Только если задана nearPickupLocationId }
     PublicTrip:
       type: object
       description: Без владельца, телефонов и документов.
