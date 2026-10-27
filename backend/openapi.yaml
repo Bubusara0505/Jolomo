@@ -386,6 +386,119 @@ paths:
               schema: { $ref: '#/components/schemas/Enrollment' }
         '403': { description: ADMIN_FORBIDDEN }
         '409': { description: CANNOT_TARGET_SELF }
+  /api/v1/admin/verification/cases:
+    get:
+      summary: Очередь проверки (старые первыми, без телефонов и документов)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [SUBMITTED, IN_REVIEW] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        '200':
+          description: Открытые заявки
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    caseId: { type: string, format: uuid }
+                    driverId: { type: string, format: uuid }
+                    status: { type: string }
+                    createdAt: { type: string, format: date-time }
+                    files: { type: integer }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { description: ADMIN_FORBIDDEN (нужно право VERIFICATION_REVIEW) }
+  /api/v1/admin/verification/cases/{id}:
+    get:
+      summary: Заявка и список её файлов (только метаданные)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Заявка }
+        '404': { description: CASE_NOT_FOUND }
+  /api/v1/admin/verification/cases/{id}/start:
+    post:
+      summary: Начать проверку (SUBMITTED в IN_REVIEW)
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '204': { description: Готово }
+        '409': { description: INVALID_CASE_STATE }
+  /api/v1/admin/verification/cases/{id}/decision:
+    post:
+      summary: Решение по заявке (IN_REVIEW в APPROVED или REJECTED); профиль водителя меняется вместе с заявкой
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reasonCode]
+              properties:
+                decision: { type: string, enum: [APPROVE, REJECT] }
+                reasonCode: { type: string }
+      responses:
+        '204': { description: Готово }
+        '409': { description: INVALID_CASE_STATE }
+  /api/v1/admin/verification/objects/{objectId}/access:
+    post:
+      summary: Выдать короткую ссылку на документ (действует 5 минут, привязана к этому администратору)
+      description: Нужна цель просмотра. Выдача и каждое скачивание пишутся в аудит. После решения по заявке документы недоступны.
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: objectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purposeCode]
+              properties:
+                purposeCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '201':
+          description: Ссылка
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  path: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '410': { description: OBJECT_UNAVAILABLE }
+  /api/v1/admin/verification/documents/{token}:
+    get:
+      summary: Скачать документ (вложение; право проверяется заново, каждое скачивание в аудите)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Байты документа (Content-Disposition attachment, nosniff, no-store)
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            application/pdf: { schema: { type: string, format: binary } }
+        '404': { description: ACCESS_NOT_FOUND (неизвестный или чужой токен) }
+        '410': { description: ACCESS_EXPIRED или OBJECT_UNAVAILABLE }
 components:
   securitySchemes:
     adminCookie:

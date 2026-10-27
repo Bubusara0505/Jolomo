@@ -11,7 +11,7 @@ public class AdminAuth {
 
     private final AdminService admins;
 
-    AdminAuth(AdminService admins) {
+    public AdminAuth(AdminService admins) {
         this.admins = admins;
     }
 
