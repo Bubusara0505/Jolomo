@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import kg.jolomo.events.DomainEventStore;
 import kg.jolomo.events.Json;
 import kg.jolomo.shared.ApiException;
+import kg.jolomo.shared.AuditLog;
 import kg.jolomo.shared.IdempotencyService;
 import kg.jolomo.trips.TripCancellationListener;
 import kg.jolomo.verification.EligibilityService;
@@ -58,10 +59,11 @@ public class ParcelService implements TripCancellationListener {
     private final DomainEventStore events;
     private final ObligationConfigService obligations;
     private final EligibilityService eligibility;
+    private final AuditLog audit;
     private final IdempotencyService idempotency;
 
     public ParcelService(JdbcClient jdbc, TransactionOperations tx, Clock clock, DomainEventStore events,
-                         ObligationConfigService obligations, EligibilityService eligibility,
+                         ObligationConfigService obligations, EligibilityService eligibility, AuditLog audit,
                          IdempotencyService idempotency) {
         this.jdbc = jdbc;
         this.tx = tx;
@@ -69,6 +71,7 @@ public class ParcelService implements TripCancellationListener {
         this.events = events;
         this.obligations = obligations;
         this.eligibility = eligibility;
+        this.audit = audit;
         this.idempotency = idempotency;
     }
 
@@ -296,6 +299,58 @@ public class ParcelService implements TripCancellationListener {
             setStatus(parcelId, ParcelStatus.CANCELLED);
             Parcel after = find(parcelId).orElseThrow();
             emit("PARCEL_CANCELLED", after, actorId, p.status().name(), "CANCELLED", sender ? "SENDER" : "DRIVER");
+            return after;
+        });
+    }
+
+    // ---------- custody (SP08-02) ----------
+
+    /** Водитель забрал посылку: ACCEPTED -> PICKUP_CONFIRMED. Только пока поездка опубликована. */
+    public Parcel confirmPickup(UUID driverId, UUID parcelId) {
+        return moveCustody(driverId, parcelId, ParcelStatus.ACCEPTED, ParcelStatus.PICKUP_CONFIRMED, true);
+    }
+
+    /** Посылка в пути: PICKUP_CONFIRMED -> IN_TRANSIT. */
+    public Parcel dispatch(UUID driverId, UUID parcelId) {
+        return moveCustody(driverId, parcelId, ParcelStatus.PICKUP_CONFIRMED, ParcelStatus.IN_TRANSIT, false);
+    }
+
+    /** Водитель на месте и ждёт получателя: IN_TRANSIT -> DELIVERY_PENDING. Это ещё не доставка (её даёт код получателя). */
+    public Parcel arrive(UUID driverId, UUID parcelId) {
+        return moveCustody(driverId, parcelId, ParcelStatus.IN_TRANSIT, ParcelStatus.DELIVERY_PENDING, false);
+    }
+
+    /**
+     * Переход custody делает только назначенный проверенный водитель, строго по цепочке, один шаг за раз. Каждый
+     * переход дописывает строку аудита (кто, когда, из какого состояния в какое) и событие домена в той же транзакции.
+     * Повтор уже сделанного перехода безопасен и нового свидетельства не пишет. Продолжение custody не требует
+     * загруженного набора обязательств: посылка уже у водителя, и стопорить её на полпути нельзя.
+     */
+    private Parcel moveCustody(UUID driverId, UUID parcelId, ParcelStatus from, ParcelStatus to, boolean requirePublished) {
+        return tx.execute(status -> {
+            Locked l = lock(parcelId);
+            if (!l.trip().ownerId().equals(driverId)) {
+                throw parcelNotFound();
+            }
+            Parcel p = l.parcel();
+            if (p.status() == to) {
+                return p;
+            }
+            if (p.status() != from) {
+                throw invalidState();
+            }
+            EligibilityService.Decision decision = eligibility.canManageParcels(driverId);
+            if (!decision.allowed()) {
+                throw new ApiException(HttpStatus.FORBIDDEN, decision.reason().name(),
+                        "error.parcel." + decision.reason().name().toLowerCase());
+            }
+            if (requirePublished && !"PUBLISHED".equals(l.trip().status())) {
+                throw new ApiException(HttpStatus.CONFLICT, "INVALID_TRIP_STATE", "error.trip.invalidState");
+            }
+            setStatus(parcelId, to);
+            Parcel after = find(parcelId).orElseThrow();
+            audit.record(driverId, "PARCEL_" + to.name(), "PARCEL", parcelId, "CUSTODY_TRANSITION", from.name(), to.name());
+            emit("PARCEL_" + to.name(), after, driverId, from.name(), to.name(), "CUSTODY");
             return after;
         });
     }

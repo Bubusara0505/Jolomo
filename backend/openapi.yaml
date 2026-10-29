@@ -1030,6 +1030,106 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/pickup:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель забрал посылку, PICKUP_CONFIRMED (SP08-02)
+      description: |
+        Только назначенный проверенный водитель, строго по цепочке ACCEPTED -> PICKUP_CONFIRMED -> IN_TRANSIT ->
+        DELIVERY_PENDING, один шаг за раз. Каждый переход пишет строку аудита (кто, когда, из какого состояния в какое) и
+        событие домена. Повтор уже сделанного шага безопасен и нового свидетельства не пишет. DELIVERED отсюда
+        недостижимо: его даёт только код получателя.
+        Нужна опубликованная поездка.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии PICKUP_CONFIRMED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: NOT_A_DRIVER, NOT_APPROVED или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не назначенный водитель не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_PARCEL_STATE (шаг пропущен или идёт назад), INVALID_TRIP_STATE (поездка не опубликована)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/dispatch:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Посылка в пути, IN_TRANSIT
+      description: |
+        Только назначенный проверенный водитель, строго по цепочке ACCEPTED -> PICKUP_CONFIRMED -> IN_TRANSIT ->
+        DELIVERY_PENDING, один шаг за раз. Каждый переход пишет строку аудита (кто, когда, из какого состояния в какое) и
+        событие домена. Повтор уже сделанного шага безопасен и нового свидетельства не пишет. DELIVERED отсюда
+        недостижимо: его даёт только код получателя.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии IN_TRANSIT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: NOT_A_DRIVER, NOT_APPROVED или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не назначенный водитель не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_PARCEL_STATE (шаг пропущен или идёт назад)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/arrive:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель на месте и ждёт получателя, DELIVERY_PENDING
+      description: |
+        Только назначенный проверенный водитель, строго по цепочке ACCEPTED -> PICKUP_CONFIRMED -> IN_TRANSIT ->
+        DELIVERY_PENDING, один шаг за раз. Каждый переход пишет строку аудита (кто, когда, из какого состояния в какое) и
+        событие домена. Повтор уже сделанного шага безопасен и нового свидетельства не пишет. DELIVERED отсюда
+        недостижимо: его даёт только код получателя.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии DELIVERY_PENDING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: NOT_A_DRIVER, NOT_APPROVED или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не назначенный водитель не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_PARCEL_STATE (шаг пропущен или идёт назад)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:

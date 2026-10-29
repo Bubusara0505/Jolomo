@@ -85,4 +85,19 @@ class ParcelController {
     ParcelService.Parcel cancel(HttpServletRequest request, @PathVariable UUID id) {
         return parcels.cancel(auth.requireUserId(request), id);
     }
+
+    @PostMapping("/parcels/{id}/pickup")
+    ParcelService.Parcel pickup(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.confirmPickup(auth.requireUserId(request), id);
+    }
+
+    @PostMapping("/parcels/{id}/dispatch")
+    ParcelService.Parcel dispatch(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.dispatch(auth.requireUserId(request), id);
+    }
+
+    @PostMapping("/parcels/{id}/arrive")
+    ParcelService.Parcel arrive(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.arrive(auth.requireUserId(request), id);
+    }
 }
