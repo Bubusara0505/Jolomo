@@ -830,6 +830,112 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels:
+    post:
+      summary: Создать заявку на посылку (SP07-04)
+      description: |
+        Запрещено по умолчанию: пока на сервере не загружен набор обязательств для посылок (obligation_config
+        PARCEL_CREATE), любое создание отклонено с 403 OBLIGATIONS_NOT_LOADED, и клиент включить его не может.
+        Проверяются поездка (опубликована, не своя, не отправилась, есть слот посылки), размер (S, M, L),
+        категория (данные в parcel_categories) и телефон получателя (+996 и 9 цифр; получатель не может быть
+        отправителем или водителем). Создание слот не закрепляет (это SP08-01). Цена посылки согласуется вне
+        платформы и в модели её нет. Заголовок Idempotency-Key обязателен, повтор возвращает сохранённый ответ.
+        Телефон получателя в ответах не возвращается.
+      security: [{ accessCookie: [], csrf: [] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tripId, size, category, recipientPhone]
+              properties:
+                tripId: { type: string, format: uuid }
+                size: { type: string, enum: [S, M, L] }
+                category: { type: string, example: DOCUMENTS, description: Код из parcel_categories }
+                recipientPhone: { type: string, example: '+996700000001' }
+      responses:
+        '201':
+          description: Заявка в состоянии REQUESTED (или сохранённый ответ при повторе)
+          headers:
+            Idempotent-Replayed: { schema: { type: string, enum: ['true'] }, description: Только при повторе }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '400':
+          description: INVALID_TRIP, INVALID_PARCEL_SIZE, INVALID_PARCEL_CATEGORY, INVALID_RECIPIENT_PHONE, RECIPIENT_IS_SENDER, RECIPIENT_IS_DRIVER, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: OBLIGATIONS_NOT_LOADED, OWN_TRIP, USER_NOT_ACTIVE или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: TRIP_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: NO_PARCEL_CAPACITY, TRIP_DEPARTED, IDEMPOTENCY_KEY_REUSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/mine:
+    get:
+      summary: Мои заявки на посылки, новые первыми
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/parcels/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Заявку видят только её отправитель и назначенный водитель
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: PARCEL_NOT_FOUND (чужая заявка не отличима от несуществующей)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/trips/{tripId}/parcels:
+    parameters:
+      - { name: tripId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Заявки на посылки по своей поездке (водителю)
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: TRIP_NOT_FOUND (чужая поездка не отличима от несуществующей)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:
@@ -986,3 +1092,15 @@ components:
         bookingId: { type: string, format: uuid }
         role: { type: string, enum: [DRIVER, PASSENGER], description: Чей это телефон }
         phone: { type: string, example: '+996555000000' }
+    Parcel:
+      type: object
+      description: Заявка на посылку без телефонов. Цены посылки в модели нет, она согласуется вне платформы.
+      properties:
+        id: { type: string, format: uuid }
+        tripId: { type: string, format: uuid }
+        senderId: { type: string, format: uuid }
+        size: { type: string, enum: [S, M, L] }
+        category: { type: string }
+        status: { type: string, enum: [REQUESTED, ACCEPTED, PICKUP_CONFIRMED, IN_TRANSIT, DELIVERY_PENDING, DELIVERED, REJECTED, CANCELLED, DELIVERY_FAILED, VERIFICATION_LOCKED, DISPUTED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

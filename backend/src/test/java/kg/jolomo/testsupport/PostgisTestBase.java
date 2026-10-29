@@ -34,11 +34,13 @@ public abstract class PostgisTestBase {
 
     @BeforeEach
     protected void cleanTables() {
-        jdbc.sql("TRUNCATE domain_events, idempotency_records, bookings, trips, sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events, admin_sessions, admin_recovery_codes, admin_accounts, identity_access_grants CASCADE")
+        jdbc.sql("TRUNCATE domain_events, idempotency_records, parcel_requests, bookings, trips, sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events, admin_sessions, admin_recovery_codes, admin_accounts, identity_access_grants CASCADE")
                 .update();
         // Данные-справочники возвращаем к состоянию миграций.
         jdbc.sql("UPDATE obligation_config SET enabled = false, version = NULL, loaded_at = NULL, loaded_by = NULL").update();
         jdbc.sql("UPDATE pickup_locations SET active = true").update();
+        jdbc.sql("DELETE FROM parcel_categories WHERE code NOT IN ('DOCUMENTS', 'SMALL_GOODS')").update();
+        jdbc.sql("UPDATE parcel_categories SET active = true").update();
         jdbc.sql("DELETE FROM eligibility_rules").update();
         jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('PUBLISH_TRIP', 'APPROVED')").update();
         jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('MANAGE_BOOKINGS', 'APPROVED')").update();

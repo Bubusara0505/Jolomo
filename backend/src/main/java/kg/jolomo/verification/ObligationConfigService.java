@@ -41,6 +41,14 @@ public class ObligationConfigService {
                 .orElse(false);
     }
 
+    /** Версия загруженного набора, если выключатель включён; иначе пусто (default deny). */
+    public java.util.Optional<String> enabledVersion(String key) {
+        return jdbc.sql("SELECT version FROM obligation_config WHERE key = :k AND enabled")
+                .param("k", key)
+                .query(String.class)
+                .optional();
+    }
+
     /** Загрузка набора обязательств по подписанному заключению. Версия обязательна. */
     public void load(String key, String version, UUID actorUserId) {
         if (version == null || version.isBlank()) {
