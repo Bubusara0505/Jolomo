@@ -16,6 +16,7 @@ import kg.jolomo.events.Json;
 import kg.jolomo.shared.ApiException;
 import kg.jolomo.shared.IdempotencyService;
 import kg.jolomo.trips.TripCancellationListener;
+import kg.jolomo.verification.EligibilityService;
 import kg.jolomo.verification.ObligationConfigService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -42,6 +43,8 @@ public class ParcelService implements TripCancellationListener {
 
     private record IdStatus(UUID id, String status) {}
 
+    private record Locked(TripRow trip, Parcel parcel) {}
+
     static final String SCOPE_CREATE = "PARCEL_CREATE";
     private static final String AGGREGATE = "PARCEL";
     private static final Set<String> SIZES = Set.of("S", "M", "L");
@@ -54,15 +57,18 @@ public class ParcelService implements TripCancellationListener {
     private final Clock clock;
     private final DomainEventStore events;
     private final ObligationConfigService obligations;
+    private final EligibilityService eligibility;
     private final IdempotencyService idempotency;
 
     public ParcelService(JdbcClient jdbc, TransactionOperations tx, Clock clock, DomainEventStore events,
-                         ObligationConfigService obligations, IdempotencyService idempotency) {
+                         ObligationConfigService obligations, EligibilityService eligibility,
+                         IdempotencyService idempotency) {
         this.jdbc = jdbc;
         this.tx = tx;
         this.clock = clock;
         this.events = events;
         this.obligations = obligations;
+        this.eligibility = eligibility;
         this.idempotency = idempotency;
     }
 
@@ -185,6 +191,115 @@ public class ParcelService implements TripCancellationListener {
         });
     }
 
+    // ---------- решения водителя и отмена (SP08-01) ----------
+
+    /**
+     * Водитель принимает заявку и закрепляет один слот посылки (размер посылки слот не меняет: один слот на посылку).
+     * Это та же блокировка, что у мест: строка поездки FOR UPDATE, затем строка заявки. У последнего слота ровно один
+     * победитель, остальные получают 409 NO_PARCEL_CAPACITY. Повтор принятия слот второй раз не занимает.
+     * Принятие требует и допуска водителя, и загруженного набора обязательств (default deny).
+     */
+    public Parcel accept(UUID driverId, UUID parcelId) {
+        return tx.execute(status -> {
+            Locked l = lock(parcelId);
+            if (!l.trip().ownerId().equals(driverId)) {
+                throw parcelNotFound();
+            }
+            Parcel p = l.parcel();
+            if (p.status() == ParcelStatus.ACCEPTED) {
+                return p;
+            }
+            if (p.status() != ParcelStatus.REQUESTED) {
+                throw invalidState();
+            }
+            EligibilityService.Decision decision = eligibility.canManageParcels(driverId);
+            if (!decision.allowed()) {
+                throw new ApiException(HttpStatus.FORBIDDEN, decision.reason().name(),
+                        "error.parcel." + decision.reason().name().toLowerCase());
+            }
+            if (obligations.enabledVersion(ObligationConfigService.PARCEL_CREATE).isEmpty()) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "OBLIGATIONS_NOT_LOADED", "error.parcel.obligations_not_loaded");
+            }
+            if (!"PUBLISHED".equals(l.trip().status())) {
+                throw new ApiException(HttpStatus.CONFLICT, "INVALID_TRIP_STATE", "error.trip.invalidState");
+            }
+            if (!l.trip().departureFrom().isAfter(clock.instant())) {
+                throw new ApiException(HttpStatus.CONFLICT, "TRIP_DEPARTED", "error.parcel.trip_departed");
+            }
+            if (l.trip().parcelSlotsAvailable() <= 0) {
+                throw new ApiException(HttpStatus.CONFLICT, "NO_PARCEL_CAPACITY", "error.parcel.no_capacity");
+            }
+            jdbc.sql("UPDATE trips SET parcel_slots_available = parcel_slots_available - 1, updated_at = :now WHERE id = :id")
+                    .param("now", utc(clock.instant()))
+                    .param("id", p.tripId())
+                    .update();
+            setStatus(parcelId, ParcelStatus.ACCEPTED);
+            Parcel after = find(parcelId).orElseThrow();
+            emit("PARCEL_ACCEPTED", after, driverId, "REQUESTED", "ACCEPTED", null);
+            return after;
+        });
+    }
+
+    /** Водитель отклоняет заявку. Слоты не меняются. Повтор безопасен. */
+    public Parcel reject(UUID driverId, UUID parcelId) {
+        return tx.execute(status -> {
+            Locked l = lock(parcelId);
+            if (!l.trip().ownerId().equals(driverId)) {
+                throw parcelNotFound();
+            }
+            Parcel p = l.parcel();
+            if (p.status() == ParcelStatus.REJECTED) {
+                return p;
+            }
+            if (p.status() != ParcelStatus.REQUESTED) {
+                throw invalidState();
+            }
+            setStatus(parcelId, ParcelStatus.REJECTED);
+            Parcel after = find(parcelId).orElseThrow();
+            emit("PARCEL_REJECTED", after, driverId, "REQUESTED", "REJECTED", null);
+            return after;
+        });
+    }
+
+    /**
+     * Отмена. Отправитель отменяет заявку или принятую посылку, водитель только принятую. Когда посылка уже у водителя
+     * (PICKUP_CONFIRMED и дальше), отмены нет: дальше custody и разбор. Слот возвращается только при переходе
+     * ACCEPTED -> CANCELLED, то есть не более одного раза; повторная отмена безопасна.
+     */
+    public Parcel cancel(UUID actorId, UUID parcelId) {
+        return tx.execute(status -> {
+            Locked l = lock(parcelId);
+            Parcel p = l.parcel();
+            boolean sender = p.senderId().equals(actorId);
+            boolean driver = l.trip().ownerId().equals(actorId);
+            if (!sender && !driver) {
+                throw parcelNotFound();
+            }
+            if (p.status() == ParcelStatus.CANCELLED) {
+                return p;
+            }
+            boolean allowed = sender
+                    ? p.status() == ParcelStatus.REQUESTED || p.status() == ParcelStatus.ACCEPTED
+                    : p.status() == ParcelStatus.ACCEPTED;
+            if (!allowed) {
+                throw invalidState();
+            }
+            if (!l.trip().departureFrom().isAfter(clock.instant())) {
+                throw new ApiException(HttpStatus.CONFLICT, "TRIP_DEPARTED", "error.parcel.trip_departed");
+            }
+            if (p.status() == ParcelStatus.ACCEPTED) {
+                jdbc.sql("UPDATE trips SET parcel_slots_available = parcel_slots_available + 1, updated_at = :now WHERE id = :id")
+                        .param("now", utc(clock.instant()))
+                        .param("id", p.tripId())
+                        .update();
+            }
+            setStatus(parcelId, ParcelStatus.CANCELLED);
+            Parcel after = find(parcelId).orElseThrow();
+            emit("PARCEL_CANCELLED", after, actorId, p.status().name(), "CANCELLED", sender ? "SENDER" : "DRIVER");
+            return after;
+        });
+    }
+
     // ---------- чтение ----------
 
     public List<Parcel> listMine(UUID senderId) {
@@ -255,6 +370,54 @@ public class ParcelService implements TripCancellationListener {
         return new Parcel(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getObject(3, UUID.class),
                 rs.getString(4), rs.getString(5), ParcelStatus.valueOf(rs.getString(6)),
                 rs.getObject(7, OffsetDateTime.class).toInstant(), rs.getObject(8, OffsetDateTime.class).toInstant());
+    }
+
+    /** Блокирует поездку, затем заявку: единый порядок для accept, reject, cancel и отмены поездки. */
+    private Locked lock(UUID parcelId) {
+        UUID tripId = jdbc.sql("SELECT trip_id FROM parcel_requests WHERE id = :id")
+                .param("id", parcelId)
+                .query(UUID.class)
+                .optional()
+                .orElseThrow(ParcelService::parcelNotFound);
+        TripRow trip = jdbc.sql("""
+                        SELECT driver_user_id, status, departure_from, parcel_slots_available
+                        FROM trips WHERE id = :id FOR UPDATE
+                        """)
+                .param("id", tripId)
+                .query((rs, i) -> new TripRow(rs.getObject(1, UUID.class), rs.getString(2),
+                        rs.getObject(3, OffsetDateTime.class).toInstant(), rs.getInt(4)))
+                .single();
+        jdbc.sql("SELECT id FROM parcel_requests WHERE id = :id FOR UPDATE")
+                .param("id", parcelId)
+                .query(UUID.class)
+                .single();
+        return new Locked(trip, find(parcelId).orElseThrow());
+    }
+
+    private void setStatus(UUID id, ParcelStatus to) {
+        jdbc.sql("UPDATE parcel_requests SET status = :s, updated_at = :now WHERE id = :id")
+                .param("s", to.name())
+                .param("now", utc(clock.instant()))
+                .param("id", id)
+                .update();
+    }
+
+    private void emit(String type, Parcel p, UUID actor, String from, String to, String reason) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("tripId", p.tripId());
+        payload.put("senderId", p.senderId());
+        payload.put("from", from);
+        payload.put("to", to);
+        payload.put("reason", reason);
+        events.append(AGGREGATE, p.id(), type, actor, payload);
+    }
+
+    private static ApiException parcelNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "PARCEL_NOT_FOUND", "error.parcel.not_found");
+    }
+
+    private static ApiException invalidState() {
+        return new ApiException(HttpStatus.CONFLICT, "INVALID_PARCEL_STATE", "error.parcel.invalid_state");
     }
 
     private static ApiException bad(String code) {

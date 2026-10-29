@@ -59,4 +59,19 @@ public class EligibilityService {
                 .single();
         return allowedStatus ? new Decision(true, Reason.OK) : new Decision(false, Reason.NOT_APPROVED);
     }
+
+    /** Принимать и отклонять заявки на посылки может водитель с профилем в статусе из правил MANAGE_PARCELS. */
+    public Decision canManageParcels(UUID userId) {
+        var profile = profiles.find(userId);
+        if (profile.isEmpty()) {
+            return new Decision(false, Reason.NOT_A_DRIVER);
+        }
+        Boolean allowedStatus = jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM eligibility_rules WHERE action = 'MANAGE_PARCELS' AND profile_status = :s)
+                        """)
+                .param("s", profile.get().status().name())
+                .query(Boolean.class)
+                .single();
+        return allowedStatus ? new Decision(true, Reason.OK) : new Decision(false, Reason.NOT_APPROVED);
+    }
 }

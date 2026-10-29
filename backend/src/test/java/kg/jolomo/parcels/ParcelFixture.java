@@ -47,7 +47,7 @@ final class ParcelFixture {
         EligibilityService eligibility = new EligibilityService(jdbc, profiles, obligations);
         events = new DomainEventStore(jdbc, tx, clock);
         idempotency = new IdempotencyService(jdbc, tx, clock);
-        parcels = new ParcelService(jdbc, tx, clock, events, obligations, idempotency);
+        parcels = new ParcelService(jdbc, tx, clock, events, obligations, eligibility, idempotency);
         trips = new TripService(jdbc, tx, clock, eligibility, profiles, events, List.of(parcels));
         obligations.load(ObligationConfigService.TRIP_PUBLISH, "v1", ADMIN);
         bishkekPoint = jdbc.sql("SELECT id FROM pickup_locations WHERE code = 'BISHKEK_WEST_BUS_STATION'")

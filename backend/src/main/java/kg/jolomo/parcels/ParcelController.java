@@ -70,4 +70,19 @@ class ParcelController {
     List<ParcelService.Parcel> forTrip(HttpServletRequest request, @PathVariable UUID tripId) {
         return parcels.listForTrip(auth.requireUserId(request), tripId);
     }
+
+    @PostMapping("/parcels/{id}/accept")
+    ParcelService.Parcel accept(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.accept(auth.requireUserId(request), id);
+    }
+
+    @PostMapping("/parcels/{id}/reject")
+    ParcelService.Parcel reject(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.reject(auth.requireUserId(request), id);
+    }
+
+    @PostMapping("/parcels/{id}/cancel")
+    ParcelService.Parcel cancel(HttpServletRequest request, @PathVariable UUID id) {
+        return parcels.cancel(auth.requireUserId(request), id);
+    }
 }

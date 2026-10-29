@@ -44,5 +44,6 @@ public abstract class PostgisTestBase {
         jdbc.sql("DELETE FROM eligibility_rules").update();
         jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('PUBLISH_TRIP', 'APPROVED')").update();
         jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('MANAGE_BOOKINGS', 'APPROVED')").update();
+        jdbc.sql("INSERT INTO eligibility_rules (action, profile_status) VALUES ('MANAGE_PARCELS', 'APPROVED')").update();
     }
 }

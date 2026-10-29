@@ -936,6 +936,100 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/accept:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель принимает заявку и закрепляет слот посылки (SP08-01)
+      description: |
+        Под блокировкой поездки закрепляет один слот посылки (размер слот не меняет). У последнего слота один победитель,
+        остальные получают 409 NO_PARCEL_CAPACITY. Повтор принятия слот второй раз не занимает. Нужны допуск водителя
+        (правило MANAGE_PARCELS) и загруженный набор обязательств для посылок.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии ACCEPTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: NOT_A_DRIVER, NOT_APPROVED, OBLIGATIONS_NOT_LOADED или CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не участник заявки не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: NO_PARCEL_CAPACITY, INVALID_PARCEL_STATE, INVALID_TRIP_STATE, TRIP_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель отклоняет заявку (слоты не меняются, повтор безопасен)
+      description: |
+        Отклонить можно только заявку в состоянии REQUESTED.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не участник заявки не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_PARCEL_STATE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/cancel:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Отмена заявки на посылку
+      description: |
+        Отправитель отменяет заявку или принятую посылку, водитель только принятую. Когда посылка уже у водителя
+        (PICKUP_CONFIRMED и дальше), отмены нет. Слот возвращается один раз, при переходе ACCEPTED -> CANCELLED;
+        повтор безопасен.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Заявка в состоянии CANCELLED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Parcel' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: CSRF_INVALID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: PARCEL_NOT_FOUND (не участник заявки не отличим от несуществующей заявки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_PARCEL_STATE, TRIP_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 components:
   securitySchemes:
     adminCookie:
