@@ -256,6 +256,44 @@ public class BookingService implements TripCancellationListener {
         });
     }
 
+    /**
+     * Водитель фиксирует, что пассажир поехал (SP07-03). Только водитель этой поездки, только из ACCEPTED и только
+     * когда время отправления наступило: по часам бронь сама не завершается, и пассажир завершить её не может.
+     * Места не возвращаются (поездка уже отправилась). Допуск водителя не проверяется: приостановленный водитель
+     * всё равно может записать факт. Повтор безопасен.
+     */
+    public Booking complete(UUID driverId, UUID bookingId) {
+        return finish(driverId, bookingId, BookingStatus.COMPLETED, "BOOKING_COMPLETED");
+    }
+
+    /** Водитель фиксирует неявку пассажира (отдельное состояние NO_SHOW). Правила те же, что у complete. */
+    public Booking markNoShow(UUID driverId, UUID bookingId) {
+        return finish(driverId, bookingId, BookingStatus.NO_SHOW, "BOOKING_NO_SHOW");
+    }
+
+    private Booking finish(UUID driverId, UUID bookingId, BookingStatus target, String eventType) {
+        return tx.execute(status -> {
+            Locked l = lock(bookingId);
+            if (!l.trip().ownerId().equals(driverId)) {
+                throw bookingNotFound();
+            }
+            Booking b = l.booking();
+            if (b.status() == target) {
+                return b;
+            }
+            if (b.status() != BookingStatus.ACCEPTED) {
+                throw invalidState();
+            }
+            if (l.trip().departureFrom().isAfter(clock.instant())) {
+                throw new ApiException(HttpStatus.CONFLICT, "TRIP_NOT_DEPARTED", "error.booking.trip_not_departed");
+            }
+            setStatus(bookingId, target, null, false);
+            Booking after = find(bookingId).orElseThrow();
+            emit(eventType, after, driverId, "ACCEPTED", target.name(), null);
+            return after;
+        });
+    }
+
     /** Водитель отменил поездку: все активные брони снимаются (места не возвращаем, поездки больше нет). */
     @Override
     public void onTripCancelled(UUID tripId, UUID actorUserId) {

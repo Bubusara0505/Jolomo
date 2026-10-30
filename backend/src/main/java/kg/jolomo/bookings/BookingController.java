@@ -87,4 +87,16 @@ class BookingController {
     BookingService.Booking cancel(HttpServletRequest request, @PathVariable UUID id) {
         return bookings.cancel(auth.requireUserId(request), id);
     }
+
+    /** Водитель фиксирует, что пассажир поехал. Только после отправления. */
+    @PostMapping("/bookings/{id}/complete")
+    BookingService.Booking complete(HttpServletRequest request, @PathVariable UUID id) {
+        return bookings.complete(auth.requireUserId(request), id);
+    }
+
+    /** Водитель фиксирует неявку пассажира. Только после отправления. */
+    @PostMapping("/bookings/{id}/no-show")
+    BookingService.Booking noShow(HttpServletRequest request, @PathVariable UUID id) {
+        return bookings.markNoShow(auth.requireUserId(request), id);
+    }
 }

@@ -1,8 +1,9 @@
 package kg.jolomo.events;
 
+import java.util.Collection;
 import java.util.Map;
 
-/** Минимальная запись JSON для payload событий: объекты, строки, числа, булевы, null. Остальное пишется строкой. */
+/** Минимальная запись JSON: объекты, массивы, строки, числа, булевы, null. Остальное пишется строкой. */
 public final class Json {
 
     private Json() {}
@@ -29,6 +30,17 @@ public final class Json {
                 write(sb, e.getValue());
             }
             sb.append('}');
+        } else if (v instanceof Collection<?> c) {
+            sb.append('[');
+            boolean first = true;
+            for (Object item : c) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                write(sb, item);
+            }
+            sb.append(']');
         } else if (v instanceof Number || v instanceof Boolean) {
             sb.append(v);
         } else {

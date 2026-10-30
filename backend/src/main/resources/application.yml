@@ -37,6 +37,12 @@ logging:
     level: "%5p [cid=%X{correlationId:-}]"
 
 jolomo:
+  export:
+    # Ночная выгрузка метрик и событий без персональных данных (SP12-01). По умолчанию выключена.
+    # Включение: jolomo.export.enabled=true и ключ псевдонимов: export EXPORT_PSEUDONYM_KEY=$(openssl rand -hex 32)
+    enabled: ${EXPORT_ENABLED:false}
+    dir: ${EXPORT_DIR:${user.home}/.jolomo/export}
+    pseudonym-key: ${EXPORT_PSEUDONYM_KEY:}
   delivery:
     # Секрет кода доставки (не равен OTP_PEPPER): export DELIVERY_OTP_PEPPER=$(openssl rand -hex 32)
     pepper: ${DELIVERY_OTP_PEPPER:}

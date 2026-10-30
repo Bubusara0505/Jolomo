@@ -778,6 +778,56 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/complete:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель фиксирует, что пассажир поехал (COMPLETED)
+      description: |
+        Только водитель этой поездки, только из ACCEPTED и только после времени отправления (иначе 409 TRIP_NOT_DEPARTED).
+        По часам бронь не завершается. Места не возвращаются. Повтор безопасен. Правила: docs/booking-lifecycle-and-metrics.md.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Бронь в состоянии COMPLETED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: BOOKING_NOT_FOUND (не водитель этой поездки)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_BOOKING_STATE, TRIP_NOT_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/bookings/{id}/no-show:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Водитель фиксирует неявку пассажира (NO_SHOW)
+      description: Те же правила и коды, что у complete. NO_SHOW отдельное состояние, не то же, что отмена.
+      security: [{ accessCookie: [], csrf: [] }]
+      responses:
+        '200':
+          description: Бронь в состоянии NO_SHOW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404':
+          description: BOOKING_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: INVALID_BOOKING_STATE, TRIP_NOT_DEPARTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
   /api/v1/bookings/{id}/cancel:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
