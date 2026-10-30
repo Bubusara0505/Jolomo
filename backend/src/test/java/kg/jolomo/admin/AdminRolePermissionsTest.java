@@ -46,4 +46,12 @@ class AdminRolePermissionsTest {
             assertThat(role.allows(AdminPermission.ADMIN_MANAGE)).isEqualTo(role == AdminRole.OWNER);
         }
     }
+
+    /** SP04-03: изъятие из удаления (legal hold) ставит и снимает только владелец. */
+    @Test
+    void onlyTheOwnerManagesLegalHolds() {
+        for (AdminRole role : AdminRole.values()) {
+            assertThat(role.allows(AdminPermission.LEGAL_HOLD)).as(role.name()).isEqualTo(role == AdminRole.OWNER);
+        }
+    }
 }

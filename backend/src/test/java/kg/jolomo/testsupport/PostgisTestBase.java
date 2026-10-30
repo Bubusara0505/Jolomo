@@ -34,9 +34,12 @@ public abstract class PostgisTestBase {
 
     @BeforeEach
     protected void cleanTables() {
-        jdbc.sql("TRUNCATE suspicious_activity, incidents, delivery_challenges, domain_events, idempotency_records, parcel_requests, bookings, trips, sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events, admin_sessions, admin_recovery_codes, admin_accounts, identity_access_grants CASCADE")
+        jdbc.sql("TRUNCATE legal_holds, suspicious_activity, incidents, delivery_challenges, domain_events, idempotency_records, parcel_requests, bookings, trips, sms_messages, auth_challenges, refresh_sessions, users, driver_profiles, audit_events, admin_sessions, admin_recovery_codes, admin_accounts, identity_access_grants CASCADE")
                 .update();
         // Данные-справочники возвращаем к состоянию миграций.
+        jdbc.sql("DELETE FROM privacy_notices WHERE version <> 'WORKING-1'").update();
+        jdbc.sql("UPDATE privacy_notices SET is_current = false").update();
+        jdbc.sql("UPDATE privacy_notices SET is_current = true WHERE version = 'WORKING-1'").update();
         jdbc.sql("UPDATE obligation_config SET enabled = false, version = NULL, loaded_at = NULL, loaded_by = NULL").update();
         jdbc.sql("UPDATE pickup_locations SET active = true").update();
         jdbc.sql("DELETE FROM parcel_categories WHERE code NOT IN ('DOCUMENTS', 'SMALL_GOODS')").update();

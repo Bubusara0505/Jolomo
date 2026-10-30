@@ -1247,7 +1247,7 @@ paths:
                 type: object
                 properties:
                   status: { type: string, enum: [DELIVERED] }
-        '400': { description: DELIVERY_CODE_INVALID (или пустой код: ошибка проверки без списания попытки) }
+        '400': { description: 'DELIVERY_CODE_INVALID (или пустой код: ошибка проверки без списания попытки)' }
         '404': { description: DELIVERY_NOT_FOUND }
         '409': { description: DELIVERY_ALREADY_VERIFIED }
         '410': { description: DELIVERY_EXPIRED }
@@ -1396,6 +1396,103 @@ paths:
         - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 100 } }
       responses:
         '200': { description: Список }
+  /api/v1/privacy-notice/current:
+    get:
+      summary: Действующая версия уведомления о данных (публично)
+      description: Текст уведомления лежит в каталогах KY/RU/EN; здесь только версия.
+      responses:
+        '200':
+          description: Версия
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  publishedAt: { type: string, format: date-time }
+        '404': { description: NOTICE_NOT_FOUND }
+  /api/v1/me/privacy-notice:
+    get:
+      summary: Какую версию уведомления принял я
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Принятая версия
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  acceptedAt: { type: string, format: date-time }
+        '401': { description: UNAUTHENTICATED }
+        '404': { description: NOTICE_NOT_ACCEPTED }
+    post:
+      summary: Принять действующую версию уведомления (повтор той же версии безопасен)
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, maxLength: 32 }
+      responses:
+        '200': { description: Принятая версия }
+        '400': { description: NOTICE_VERSION_INVALID или NOTICE_VERSION_UNKNOWN }
+        '401': { description: UNAUTHENTICATED }
+        '409': { description: NOTICE_NOT_CURRENT (принять можно только действующую версию) }
+  /api/v1/admin/legal-holds:
+    post:
+      summary: Поставить legal hold на пользователя (только владелец)
+      description: Право LEGAL_HOLD. Пока hold действует, задания удаления пользователя не трогают. Свободного текста нет, только код причины.
+      security: [{ adminCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, reasonCode]
+              properties:
+                userId: { type: string, format: uuid }
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '201': { description: Hold поставлен }
+        '400': { description: REASON_REQUIRED }
+        '403': { description: ADMIN_FORBIDDEN }
+        '404': { description: USER_NOT_FOUND }
+        '409': { description: LEGAL_HOLD_ALREADY_ACTIVE }
+    get:
+      summary: Holds по пользователю (новые первыми)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: userId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Список }
+        '403': { description: ADMIN_FORBIDDEN }
+  /api/v1/admin/legal-holds/{id}/release:
+    post:
+      summary: Снять legal hold (только владелец)
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '200': { description: Hold снят }
+        '403': { description: ADMIN_FORBIDDEN }
+        '404': { description: LEGAL_HOLD_NOT_FOUND }
+        '409': { description: LEGAL_HOLD_ALREADY_RELEASED }
 components:
   securitySchemes:
     adminCookie:

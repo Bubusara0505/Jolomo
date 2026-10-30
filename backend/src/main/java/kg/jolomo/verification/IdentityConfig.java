@@ -14,4 +14,10 @@ class IdentityConfig {
             @Value("${jolomo.identity.dir}") String dir, @Value("${jolomo.identity.key:}") String key) {
         return new IdentityFileStore(Path.of(dir), key);
     }
+
+    /** Порт удаления для задания очистки синтетических данных (модуль users). */
+    @Bean
+    kg.jolomo.users.IdentityFileEraser identityFileEraser(IdentityFileStore store) {
+        return store::deleteQuietly;
+    }
 }

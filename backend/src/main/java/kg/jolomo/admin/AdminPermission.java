@@ -7,5 +7,7 @@ public enum AdminPermission {
     DRIVER_SUSPEND,
     /** Пометка подозрительной активности (только запись). */
     ACTIVITY_FLAG,
+    /** Постановка и снятие legal hold: изъятие пользователя из заданий удаления. Только владелец. */
+    LEGAL_HOLD,
     ADMIN_MANAGE
 }

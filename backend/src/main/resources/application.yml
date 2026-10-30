@@ -43,6 +43,11 @@ jolomo:
     enabled: ${EXPORT_ENABLED:false}
     dir: ${EXPORT_DIR:${user.home}/.jolomo/export}
     pseudonym-key: ${EXPORT_PSEUDONYM_KEY:}
+  privacy:
+    purge:
+      # Ночное удаление ПРОСРОЧЕННЫХ СИНТЕТИЧЕСКИХ строк (SP04-03), 03:10 Asia/Bishkek. Реальных людей не трогает:
+      # сроки хранения их данных пусты, пока их не задаст юрист. Выключить: PRIVACY_PURGE_ENABLED=false
+      enabled: ${PRIVACY_PURGE_ENABLED:true}
   delivery:
     # Секрет кода доставки (не равен OTP_PEPPER): export DELIVERY_OTP_PEPPER=$(openssl rand -hex 32)
     pepper: ${DELIVERY_OTP_PEPPER:}
