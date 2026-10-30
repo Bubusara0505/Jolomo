@@ -1277,6 +1277,75 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Incident' }
         '404': { description: INCIDENT_NOT_FOUND }
+  /api/v1/admin/drivers/{userId}/suspend:
+    post:
+      summary: Поддержка приостанавливает водителя
+      description: Право DRIVER_SUSPEND (поддержка и владелец), код причины и аудит обязательны. Лишает допуска к публикации и ведению посылок; вместимость и доставку не меняет.
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '204': { description: Водитель приостановлен }
+        '403': { description: ADMIN_FORBIDDEN }
+        '404': { description: DRIVER_PROFILE_NOT_FOUND }
+        '409': { description: INVALID_TRANSITION (уже приостановлен) }
+  /api/v1/admin/drivers/{userId}/lift-suspension:
+    post:
+      summary: Поддержка снимает приостановку (возвращает прежнее состояние, допуск заново не выдаётся)
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '204': { description: Приостановка снята }
+        '403': { description: ADMIN_FORBIDDEN }
+        '409': { description: INVALID_TRANSITION (водитель не приостановлен) }
+  /api/v1/admin/suspicious-activity:
+    post:
+      summary: Поддержка помечает подозрительную активность пользователя (только запись)
+      description: Право ACTIVITY_FLAG. Пометка ничего не блокирует; приостановка это отдельное действие. Свободного текста нет.
+      security: [{ adminCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, kind, reasonCode]
+              properties:
+                userId: { type: string, format: uuid }
+                kind: { type: string, enum: [MULTIPLE_ACCOUNTS, FAKE_RECIPIENT_PHONE, REPEATED_CODE_FAILURES, DOCUMENT_MISMATCH, OTHER] }
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '201': { description: Пометка записана }
+        '400': { description: REASON_REQUIRED или INVALID_SUSPICION_KIND }
+        '403': { description: ADMIN_FORBIDDEN }
+        '404': { description: USER_NOT_FOUND }
+    get:
+      summary: Пометки по пользователю (новые первыми)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: userId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        '200': { description: Список }
 components:
   securitySchemes:
     adminCookie:
