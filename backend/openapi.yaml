@@ -1130,6 +1130,98 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+  /api/v1/parcels/{id}/delivery-challenge:
+    post:
+      summary: Водитель на месте просит отправить получателю код доставки (SMS)
+      description: |
+        Только назначенный проверенный водитель и только когда посылка в DELIVERY_PENDING. Код и ссылка уходят SMS на номер
+        получателя из заявки; в ответе их нет. Новый запрос отменяет прежний код, повторы ограничены (не чаще раза в 60 секунд,
+        не более 5 в час). Код живёт 2 часа.
+      security: [{ accessCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Код отправлен получателю
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expiresAt: { type: string, format: date-time }
+                  resendAfterSeconds: { type: integer }
+        '404': { description: PARCEL_NOT_FOUND (чужая посылка тоже) }
+        '409': { description: INVALID_PARCEL_STATE или VERIFICATION_LOCKED }
+        '429': { description: DELIVERY_TOO_SOON или DELIVERY_RESEND_LIMIT }
+  /api/v1/deliveries/{challengeId}:
+    get:
+      summary: Состояние проверки для страницы получателя (без входа)
+      description: Доступ даёт сама ссылка из SMS. Чужая, подменная или заменённая ссылка даёт общий DELIVERY_NOT_FOUND.
+      parameters:
+        - { name: challengeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Состояние
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [ACTIVE, CONSUMED, LOCKED, EXPIRED] }
+                  expiresAt: { type: string, format: date-time }
+        '404': { description: DELIVERY_NOT_FOUND }
+  /api/v1/deliveries/{challengeId}/verify:
+    post:
+      summary: Получатель без аккаунта подтверждает доставку кодом из SMS
+      description: |
+        Без входа и без CSRF (маршрут не использует сессию), поэтому страница получателя может слать запрос и из браузера,
+        где человек уже вошёл в JolOmo. Код привязан к посылке, получателю и переходу, потребляется один раз.
+        Три ошибки подряд блокируют проверку (423), посылка получает VERIFICATION_LOCKED, спор не открывается.
+      parameters:
+        - { name: challengeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: '123456' }
+      responses:
+        '200':
+          description: Доставка подтверждена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [DELIVERED] }
+        '400': { description: DELIVERY_CODE_INVALID (или пустой код: ошибка проверки без списания попытки) }
+        '404': { description: DELIVERY_NOT_FOUND }
+        '409': { description: DELIVERY_ALREADY_VERIFIED }
+        '410': { description: DELIVERY_EXPIRED }
+        '423': { description: DELIVERY_LOCKED (три ошибки или повторная попытка после блокировки) }
+  /api/v1/admin/parcels/{id}/unlock-verification:
+    post:
+      summary: Поддержка снимает блокировку проверки доставки (VERIFICATION_LOCKED в DELIVERY_PENDING)
+      description: Право INCIDENT_RECORD, код причины и аудит обязательны. Доставленной посылку это не делает; водитель после этого запрашивает новый код.
+      security: [{ adminCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '204': { description: Блокировка снята }
+        '403': { description: ADMIN_FORBIDDEN }
+        '409': { description: INVALID_PARCEL_STATE (посылка не в VERIFICATION_LOCKED) }
 components:
   securitySchemes:
     adminCookie:

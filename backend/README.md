@@ -3,7 +3,7 @@
 Java 21, Spring Boot (кандидат 4.1.1 по ТЗ), Gradle Kotlin DSL, PostgreSQL 16 + PostGIS, Flyway.
 
 ## Запуск
-1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`) `ADMIN_TOTP_KEY` (`openssl rand -base64 32`, шифрует секреты TOTP администраторов) и `IDENTITY_KEY` (`openssl rand -base64 32`, ключ файлов личности; потеряете ключ, потеряете файлы). Без любого из этих секретов приложение не стартует.
+1. `cp .env.example .env`, задайте `DB_PASSWORD`, `OTP_PEPPER` (`openssl rand -hex 32`), `SESSION_SECRET` (`openssl rand -hex 32`) и `SMS_BODY_KEY` (`openssl rand -base64 32`) `ADMIN_TOTP_KEY` (`openssl rand -base64 32`, шифрует секреты TOTP администраторов) и `IDENTITY_KEY` (`openssl rand -base64 32`, ключ файлов личности; потеряете ключ, потеряете файлы). `DELIVERY_OTP_PEPPER` (`openssl rand -hex 32`, секрет кода доставки, не равен `OTP_PEPPER`). Без любого из этих секретов приложение не стартует.
 2. `docker compose up -d` — локальная БД с PostGIS.
 3. `./gradlew bootRun` (переменные из `.env` экспортируйте в окружение). Чтобы видеть код SMS в логе: `SPRING_PROFILES_ACTIVE=dev SMS_FAKE_LOG_BODY=true ./gradlew bootRun`; без профиля `dev` флаг не даст стартовать.
 4. Проверка: `curl localhost:8080/actuator/health`.
@@ -134,3 +134,14 @@ H2 не используется.
 - Если посылка уже у водителя, её нельзя отменить ни отправителю, ни водителю, и отмена поездки её молча не снимает (она остаётся для разбора). Незабранные принятые заявки отмена поездки снимает.
 - `DELIVERED` из этой цепочки недостижим: его даст только код получателя (SP09-02). Строки `audit_events` пока не защищены от правки на уровне базы (запрет UPDATE/DELETE можно добавить отдельной миграцией, как у `domain_events`).
 
+
+## Код доставки (SP09-02, SP09-03)
+Доставку подтверждает только получатель без аккаунта. Когда водитель на месте (`DELIVERY_PENDING`), он вызывает
+`POST /api/v1/parcels/{id}/delivery-challenge`: сервер создаёт код и отправляет SMS на номер получателя из заявки со ссылкой
+`DELIVERY_LINK_BASE/{challengeId}`. Страница получателя (SP10-03) вызывает `GET /api/v1/deliveries/{challengeId}` и
+`POST /api/v1/deliveries/{challengeId}/verify` `{code}` без входа и без CSRF-заголовка.
+- Код привязан к посылке, номеру получателя и переходу `DELIVERY_PENDING -> DELIVERED` (HMAC с `DELIVERY_OTP_PEPPER`), хранится как хеш, потребляется один раз. Кода нет в ответах, журнале и событиях; в базе он лежит только внутри зашифрованного текста SMS до отправки.
+- Три ошибки подряд: проверка заблокирована, посылка получает `VERIFICATION_LOCKED` (`423 DELIVERY_LOCKED`). Спор (`DISPUTED`) отсюда не открывается никогда.
+- Снять блокировку может только поддержка (`POST /api/v1/admin/parcels/{id}/unlock-verification`, право `INCIDENT_RECORD`, код причины, аудит). Это возвращает посылку в `DELIVERY_PENDING`, но доставленной не делает: нужен новый код от водителя.
+- Не чаще одного кода в 60 секунд и не более 5 в час на посылку. Код живёт 2 часа.
+- Текст SMS пока только на русском (каталоги KY/RU/EN в SP11-03).

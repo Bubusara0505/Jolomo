@@ -28,7 +28,9 @@ class CsrfFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        if (!SAFE.contains(request.getMethod()) && hasSessionCookie(request) && !csrfValid(request)) {
+        // Получатель без аккаунта: маршруты /api/v1/deliveries/ не используют сессию, доступом служат ссылка и код.
+        boolean sessionless = request.getRequestURI().startsWith("/api/v1/deliveries/");
+        if (!sessionless && !SAFE.contains(request.getMethod()) && hasSessionCookie(request) && !csrfValid(request)) {
             reject(response);
             return;
         }

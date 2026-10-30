@@ -35,7 +35,10 @@ class IdentityFileStoreTest {
 
         byte[] onDisk = Files.readAllBytes(dir.resolve(IdentityFileStore.keyFor(id)));
         assertThat(onDisk).isNotEqualTo(png);
-        assertThat(onDisk[1]).isNotEqualTo((byte) 'P'); // сигнатура PNG на диске не видна
+        // На диске нет ни сигнатуры PNG, ни служебного блока внутри файла (случайные байты шифртекста этого не дают).
+        byte[] head = java.util.Arrays.copyOfRange(onDisk, 0, 8);
+        assertThat(head).isNotEqualTo(java.util.Arrays.copyOfRange(png, 0, 8));
+        assertThat(new String(onDisk, java.nio.charset.StandardCharsets.ISO_8859_1)).doesNotContain("IHDR").doesNotContain("IDAT");
         assertThat(store.read(id)).isEqualTo(png);
         assertThat(files()).isEqualTo(1); // временного файла не осталось
     }

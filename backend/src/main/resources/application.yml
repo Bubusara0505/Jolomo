@@ -37,6 +37,14 @@ logging:
     level: "%5p [cid=%X{correlationId:-}]"
 
 jolomo:
+  delivery:
+    # Секрет кода доставки (не равен OTP_PEPPER): export DELIVERY_OTP_PEPPER=$(openssl rand -hex 32)
+    pepper: ${DELIVERY_OTP_PEPPER:}
+    ttl-minutes: 120
+    resend-seconds: 60
+    max-per-hour: 5
+    # Страница получателя (задача фронтенда SP10-03); в SMS уходит эта ссылка и id проверки.
+    link-base: ${DELIVERY_LINK_BASE:http://localhost:3000/r}
   admin:
     # Ключ шифрования секретов TOTP: export ADMIN_TOTP_KEY=$(openssl rand -base64 32)
     totp-key: ${ADMIN_TOTP_KEY:}

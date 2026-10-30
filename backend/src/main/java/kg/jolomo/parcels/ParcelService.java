@@ -40,11 +40,11 @@ public class ParcelService implements TripCancellationListener {
 
     public record NewParcel(UUID tripId, String size, String category, String recipientPhone) {}
 
-    private record TripRow(UUID ownerId, String status, Instant departureFrom, int parcelSlotsAvailable) {}
+    record TripRow(UUID ownerId, String status, Instant departureFrom, int parcelSlotsAvailable) {}
 
     private record IdStatus(UUID id, String status) {}
 
-    private record Locked(TripRow trip, Parcel parcel) {}
+    record Locked(TripRow trip, Parcel parcel) {}
 
     static final String SCOPE_CREATE = "PARCEL_CREATE";
     private static final String AGGREGATE = "PARCEL";
@@ -428,7 +428,7 @@ public class ParcelService implements TripCancellationListener {
     }
 
     /** Блокирует поездку, затем заявку: единый порядок для accept, reject, cancel и отмены поездки. */
-    private Locked lock(UUID parcelId) {
+    Locked lock(UUID parcelId) {
         UUID tripId = jdbc.sql("SELECT trip_id FROM parcel_requests WHERE id = :id")
                 .param("id", parcelId)
                 .query(UUID.class)
@@ -449,7 +449,7 @@ public class ParcelService implements TripCancellationListener {
         return new Locked(trip, find(parcelId).orElseThrow());
     }
 
-    private void setStatus(UUID id, ParcelStatus to) {
+    void setStatus(UUID id, ParcelStatus to) {
         jdbc.sql("UPDATE parcel_requests SET status = :s, updated_at = :now WHERE id = :id")
                 .param("s", to.name())
                 .param("now", utc(clock.instant()))
@@ -457,7 +457,7 @@ public class ParcelService implements TripCancellationListener {
                 .update();
     }
 
-    private void emit(String type, Parcel p, UUID actor, String from, String to, String reason) {
+    void emit(String type, Parcel p, UUID actor, String from, String to, String reason) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("tripId", p.tripId());
         payload.put("senderId", p.senderId());
@@ -467,11 +467,11 @@ public class ParcelService implements TripCancellationListener {
         events.append(AGGREGATE, p.id(), type, actor, payload);
     }
 
-    private static ApiException parcelNotFound() {
+    static ApiException parcelNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, "PARCEL_NOT_FOUND", "error.parcel.not_found");
     }
 
-    private static ApiException invalidState() {
+    static ApiException invalidState() {
         return new ApiException(HttpStatus.CONFLICT, "INVALID_PARCEL_STATE", "error.parcel.invalid_state");
     }
 

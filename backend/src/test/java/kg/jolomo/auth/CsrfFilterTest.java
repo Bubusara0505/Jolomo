@@ -24,6 +24,11 @@ class CsrfFilterTest {
             return "ok";
         }
 
+        @PostMapping("/api/v1/deliveries/x/verify")
+        String recipient() {
+            return "ok";
+        }
+
         @GetMapping("/probe")
         String read() {
             return "ok";
@@ -50,6 +55,12 @@ class CsrfFilterTest {
         mvc.perform(post("/probe")
                         .cookie(new Cookie("jl_admin", "x"), new Cookie("jl_csrf", "t1"))
                         .header("X-CSRF-Token", "t1"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void recipientRoutesDoNotUseTheSessionSoCookiesDoNotRequireCsrf() throws Exception {
+        mvc.perform(post("/api/v1/deliveries/x/verify").cookie(new Cookie("jl_access", "x"), new Cookie("jl_admin", "y")))
                 .andExpect(status().isOk());
     }
 
