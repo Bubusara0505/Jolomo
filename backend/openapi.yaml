@@ -1222,6 +1222,61 @@ paths:
         '204': { description: Блокировка снята }
         '403': { description: ADMIN_FORBIDDEN }
         '409': { description: INVALID_PARCEL_STATE (посылка не в VERIFICATION_LOCKED) }
+  /api/v1/admin/incidents:
+    post:
+      summary: Поддержка записывает инцидент по посылке
+      description: |
+        Право INCIDENT_RECORD, код причины обязателен. Инцидент это только запись: статус посылки не меняется, доставленной
+        она не становится, спор не открывается. В записи сохраняются состояние посылки и версия условий (набор обязательств
+        при создании посылки). Свободного текста нет.
+      security: [{ adminCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parcelId, kind, reasonCode]
+              properties:
+                parcelId: { type: string, format: uuid }
+                kind: { type: string, enum: [RECIPIENT_UNREACHABLE, CODE_NOT_RECEIVED, PARCEL_DAMAGED, PARCEL_LOST, HANDOVER_DISPUTE, OTHER] }
+                reasonCode: { type: string, pattern: '^[A-Z0-9_]{3,64}$' }
+      responses:
+        '201':
+          description: Записанный инцидент
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '400': { description: REASON_REQUIRED или INVALID_INCIDENT_KIND }
+        '403': { description: ADMIN_FORBIDDEN }
+        '404': { description: PARCEL_NOT_FOUND }
+    get:
+      summary: Инциденты по посылке (новые первыми)
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: parcelId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        '200':
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Incident' }
+  /api/v1/admin/incidents/{id}:
+    get:
+      summary: Инцидент
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Инцидент
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '404': { description: INCIDENT_NOT_FOUND }
 components:
   securitySchemes:
     adminCookie:
@@ -1243,6 +1298,17 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
   schemas:
+    Incident:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        parcelId: { type: string, format: uuid }
+        kind: { type: string }
+        reasonCode: { type: string }
+        recordedBy: { type: string, format: uuid }
+        parcelStatus: { type: string }
+        termsVersion: { type: string }
+        createdAt: { type: string, format: date-time }
     TripCreate:
       type: object
       required: [direction, pickupLocationId, departureFrom, departureTo, seatsTotal, priceKgs]

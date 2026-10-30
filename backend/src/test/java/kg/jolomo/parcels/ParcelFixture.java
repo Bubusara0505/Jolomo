@@ -30,7 +30,7 @@ final class ParcelFixture {
     final JdbcClient jdbc;
     final TransactionOperations tx;
     final ObligationConfigService obligations;
-    final DomainEventStore events;
+    final FlakyDomainEventStore events;
     final IdempotencyService idempotency;
     final ParcelService parcels;
     final TripService trips;
@@ -45,7 +45,7 @@ final class ParcelFixture {
         profiles = new DriverProfileService(jdbc, tx, clock, audit);
         obligations = new ObligationConfigService(jdbc, tx, clock, audit);
         EligibilityService eligibility = new EligibilityService(jdbc, profiles, obligations);
-        events = new DomainEventStore(jdbc, tx, clock);
+        events = new FlakyDomainEventStore(jdbc, tx, clock);
         idempotency = new IdempotencyService(jdbc, tx, clock);
         parcels = new ParcelService(jdbc, tx, clock, events, obligations, eligibility, audit, idempotency);
         trips = new TripService(jdbc, tx, clock, eligibility, profiles, events, List.of(parcels));
