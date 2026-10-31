@@ -1444,6 +1444,87 @@ paths:
         '400': { description: NOTICE_VERSION_INVALID или NOTICE_VERSION_UNKNOWN }
         '401': { description: UNAUTHENTICATED }
         '409': { description: NOTICE_NOT_CURRENT (принять можно только действующую версию) }
+  /api/v1/push/vapid-key:
+    get:
+      summary: Открытый ключ VAPID для подписки в браузере (публично)
+      description: Если сервер не настроен на Web Push, ответ 503 PUSH_DISABLED, и приложение не показывает предложение включить уведомления.
+      responses:
+        '200':
+          description: Ключ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  publicKey: { type: string, description: Несжатая точка P-256 в base64url, пригодна для applicationServerKey }
+        '503': { description: PUSH_DISABLED }
+  /api/v1/me/push-subscriptions:
+    get:
+      summary: Мои действующие подписки Web Push (без адресов)
+      security: [{ accessCookie: [] }]
+      responses:
+        '200':
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PushSubscription' }
+        '401': { description: UNAUTHENTICATED }
+    post:
+      summary: Включить Web Push на этом устройстве (opt-in)
+      description: >-
+        Тело это результат PushSubscription.toJSON() браузера. Ключи keys принимаются и не сохраняются: push уходит без полезной нагрузки.
+        Повтор с тем же адресом продлевает срок. Если человек отказал в разрешении, это обычное состояние: приложение просто не вызывает маршрут.
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, maxLength: 2048 }
+                expirationTime: { type: integer, format: int64, nullable: true, description: Срок от браузера, мс от начала эпохи }
+                keys: { type: object, description: Принимается и игнорируется }
+      responses:
+        '200':
+          description: Подписка
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushSubscription' }
+        '400': { description: PUSH_ENDPOINT_INVALID (не https или не известная push-служба) или PUSH_SUBSCRIPTION_EXPIRED }
+        '401': { description: UNAUTHENTICATED }
+        '409': { description: PUSH_LIMIT_REACHED (не больше 10 устройств) }
+        '503': { description: PUSH_DISABLED }
+  /api/v1/me/push-subscriptions/{id}:
+    delete:
+      summary: Снять подписку по id (повтор безопасен)
+      security: [{ accessCookie: [], csrf: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Снята }
+        '401': { description: UNAUTHENTICATED }
+        '404': { description: PUSH_SUBSCRIPTION_NOT_FOUND (нет такой или она чужая) }
+  /api/v1/me/push-subscriptions/revoke:
+    post:
+      summary: Снять подписку по адресу (браузер знает адрес, а не id)
+      description: Неизвестный или чужой адрес молча даёт 204, чтобы по ответу нельзя было узнать, чей он.
+      security: [{ accessCookie: [], csrf: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, maxLength: 2048 }
+      responses:
+        '204': { description: Готово }
+        '401': { description: UNAUTHENTICATED }
   /api/v1/admin/legal-holds:
     post:
       summary: Поставить legal hold на пользователя (только владелец)
@@ -1660,6 +1741,13 @@ components:
         bookingId: { type: string, format: uuid }
         role: { type: string, enum: [DRIVER, PASSENGER], description: Чей это телефон }
         phone: { type: string, example: '+996555000000' }
+    PushSubscription:
+      type: object
+      description: Подписка Web Push. Адреса в ответах нет.
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
     Parcel:
       type: object
       description: Заявка на посылку без телефонов. Цены посылки в модели нет, она согласуется вне платформы.

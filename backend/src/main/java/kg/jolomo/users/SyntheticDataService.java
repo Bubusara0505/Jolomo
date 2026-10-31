@@ -27,7 +27,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * <p>Что пропускается: пользователь с действующим legal hold; пользователь, связанный бронью, поездкой или посылкой с кем-то,
  * кто под удаление не попадает (иначе удалилась бы чужая строка). Связанные синтетические пользователи уходят вместе.
  * Что удаляется у каждого: файлы личности (байты и строки), заявки, сессии, профиль, поездки, брони, посылки и их проверки,
- * инциденты, пометки, ключи идемпотентности, коды и SMS на его номер, сама строка пользователя.
+ * инциденты, пометки, подписки Web Push, ключи идемпотентности, коды и SMS на его номер, сама строка пользователя.
  * Что остаётся: audit_events и domain_events (в них только идентификаторы, внешних ключей нет), legal_holds.
  * Каждое удаление пишет строку аудита в той же транзакции.
  */
@@ -211,6 +211,7 @@ public class SyntheticDataService {
             exec("DELETE FROM idempotency_records WHERE subject_user_id = :u", userId);
             exec("DELETE FROM refresh_sessions WHERE user_id = :u", userId);
             exec("DELETE FROM suspicious_activity WHERE user_id = :u", userId);
+            exec("DELETE FROM web_push_subscriptions WHERE user_id = :u", userId);
             exec("DELETE FROM driver_profiles WHERE user_id = :u", userId);
             jdbc.sql("DELETE FROM auth_challenges WHERE phone = :p").param("p", phone).update();
             jdbc.sql("DELETE FROM sms_messages WHERE phone = :p").param("p", phone).update();

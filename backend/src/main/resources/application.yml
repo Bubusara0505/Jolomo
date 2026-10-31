@@ -43,6 +43,18 @@ jolomo:
     enabled: ${EXPORT_ENABLED:false}
     dir: ${EXPORT_DIR:${user.home}/.jolomo/export}
     pseudonym-key: ${EXPORT_PSEUDONYM_KEY:}
+  push:
+    # Web Push (SP11-02). Необязателен и никогда не доказательство. По умолчанию выключен.
+    # Ключи: java tools/VapidKeygen.java (из папки backend). Включено без ключей: приложение не стартует.
+    enabled: ${PUSH_ENABLED:false}
+    vapid:
+      public-key: ${PUSH_VAPID_PUBLIC_KEY:}
+      private-key: ${PUSH_VAPID_PRIVATE_KEY:}
+      subject: ${PUSH_VAPID_SUBJECT:}
+    # Домены push-служб через запятую; пусто = fcm.googleapis.com, push.services.mozilla.com, push.apple.com, notify.windows.com
+    allowed-hosts: ${PUSH_ALLOWED_HOSTS:}
+    subscription-days: 90
+    max-failures: 5
   privacy:
     purge:
       # Ночное удаление ПРОСРОЧЕННЫХ СИНТЕТИЧЕСКИХ строк (SP04-03), 03:10 Asia/Bishkek. Реальных людей не трогает:

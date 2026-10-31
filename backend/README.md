@@ -197,3 +197,13 @@ H2 не используется.
 - Ночное задание (03:10 Asia/Bishkek) удаляет **только просроченных синтетических** пользователей и всё, что к ним относится,
   пропускает legal hold и связи с людьми вне удаляемой группы, пишет аудит. Реальных людей не трогает: их сроки пусты до юриста.
   Выключатель: `PRIVACY_PURGE_ENABLED=false`.
+
+## Web Push (SP11-02)
+
+Подробно: `docs/web-push.md`.
+
+- Маршруты: `GET /api/v1/push/vapid-key` (публично), `GET` и `POST /api/v1/me/push-subscriptions`, `DELETE /api/v1/me/push-subscriptions/{id}`,
+  `POST /api/v1/me/push-subscriptions/revoke`. Отказ в разрешении это обычное состояние, отписаться можно всегда.
+- Push уходит пустым (без нагрузки), поэтому не несёт контактов и ничего не подтверждает. Сбой тихий и деловые данные не трогает.
+- Адрес подписки проверяется по списку известных push-служб (защита от SSRF), редиректы не выполняются.
+- Выключено по умолчанию. Ключи: `java tools/VapidKeygen.java`, затем `PUSH_ENABLED=true`, `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT`.
