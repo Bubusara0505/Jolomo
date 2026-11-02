@@ -42,3 +42,9 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+// Swagger UI (только профиль dev) отдаёт те же файлы openapi, что лежат в репозитории: копируем их в classpath при сборке.
+tasks.processResources {
+    from("openapi.yaml") { into("apidocs") }
+    from("docs/sms-gateway-openapi.yaml") { into("apidocs") }
+}
